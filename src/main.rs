@@ -1,10 +1,25 @@
 mod system;
+mod bitflags;
+
+use std::fs;
+use anyhow::Result;
 
 use system::cpu::CPU;
 
-fn main() {
+fn main() -> Result<()> {
 
-    let cpu = CPU::init();
+    let mut system = system::System::new();
 
-    println!("Hello, world!");
+    let cart_file = fs::File::open("carts/nestest.nes")?;
+
+    system.load_cart(&cart_file)?;
+
+    println!();
+    println!("Starting execution...");
+
+    system.run()?;
+
+    println!("Done!");
+
+    Ok(())
 }
