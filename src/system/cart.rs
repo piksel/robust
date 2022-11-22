@@ -27,7 +27,8 @@ impl Cart {
         let chr_rom = head.by_ref().take(header.chr_rom_size).collect::<IOResult<Vec<u8>>>()?;
 
         let prg_ram_size = match header.mapper {
-            0 => 4096,
+            // 0 => 4096,
+            0 => 0x2000,
             mapper => panic!("mapper {mapper} is not implemented")
         };
         let prg_ram = vec![0; prg_ram_size];

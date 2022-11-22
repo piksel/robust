@@ -11,6 +11,8 @@ $4018-$401F	$0008	APU and I/O functionality that is normally disabled. See CPU T
 $4020-$FFFF	$BFE0	Cartridge space: PRG ROM, PRG RAM, and mapper registers (See Note
 */
 
+use super::cpu::AddressMode;
+
 impl super::System {
 
     pub fn read_byte(&self, addr: u16) -> u8 {
@@ -27,10 +29,31 @@ impl super::System {
         }
     }
 
+    pub fn write_byte(&mut self, addr: u16, value: u8) {
+        match self.map_addr(addr) {
+            BusTarget::RAM(ra) => self.ram[ra] = value,
+            BusTarget::PPU(ra) => self.ppu[ra] = value,
+            BusTarget::APU(ra) => self.apu[ra] = value,
+            BusTarget::PRG => {
+                match &self.cart {
+                    None => panic!("tried to read from cart when not loaded"),
+                    Some(cart) => panic!("writing to cart is not implemented (tried writing {value:02x} to {addr:04x})")
+                }
+            },
+        }
+    }
+
+
+
     pub fn read_word(&self, addr: u16) -> u16 {
         let high = self.read_byte(addr + 1);
         let low = self.read_byte(addr);
         ((high as u16) << 8) | low as u16
+    }
+
+    pub fn write_word(&mut self, addr: u16, value: u16) {
+        self.write_byte(addr, (value & 0xff) as u8);
+        self.write_byte(addr + 1, (value >> 8) as u8);
     }
 
     pub fn map_addr(&self, addr: u16) -> BusTarget {

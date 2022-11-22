@@ -54,13 +54,15 @@ impl System {
         // init program counter (for use with test cart)
         self.cpu.pc = 0xc000;
 
-        for step in 0..10 {
+        let mut cycles = 0u64;
+
+        for step in 0..2000 {
             let pc = self.cpu.pc;
             let a = self.cpu.a;
             let x = self.cpu.x;
             let y = self.cpu.y;
             let sp = self.cpu.sp;
-            print!("Step {step:02}:  PC: {pc:04x}  A: {a:02x}  X: {x:02x}  Y: {y:02x}  SP: {sp:02x}  Flags: ");
+            print!("{step:03}:  PC: {pc:04x}  A: {a:02x}  X: {x:02x}  Y: {y:02x}  SP: {sp:02x}  Flags: ");
 
             if self.cpu.carry {
                 print!("C")
@@ -103,11 +105,20 @@ impl System {
             } else {
                 print!("-")
             }
+            
+            let (op, am, bc) = self.cpu.load(&self);
 
-            println!();
+            // let op_str = 
+            print!("  {bc:02x}  {:26} {:16}", format!("{op:?}"), format!("{am:?}"));
 
-            let (op, am) = self.cpu.load(&self);
-            self.cpu.execute(&self, op, am);
+            let debug_02 = self.read_byte(0x02);
+            let debug_03 = self.read_byte(0x03);
+
+            println!("  {debug_02:02x}  {debug_03:02x}");
+
+            cycles += CPU::execute(self, op, am) as u64;
+            // let cpu = &mut self.cpu;
+            // cpu.execute(self, op, am);
         }
 
         Ok(())

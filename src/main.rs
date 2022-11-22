@@ -4,10 +4,9 @@ mod bitflags;
 use std::fs;
 use anyhow::Result;
 
-use system::cpu::CPU;
-
 fn main() -> Result<()> {
 
+    color_backtrace::install();
     let mut system = system::System::new();
 
     let cart_file = fs::File::open("carts/nestest.nes")?;
