@@ -9,3 +9,4 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0"
 color-backtrace = "0.5.1"
+"termcolor" = "1.0"

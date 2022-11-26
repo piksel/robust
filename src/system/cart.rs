@@ -1,8 +1,8 @@
 
+
 use anyhow::{Result, format_err, bail};
 
-use crate::bitflags;
-
+#[allow(dead_code)]
 const HEADER_SIZE: usize = 16;
 const HEADER_MAGIC: [u8; 4] = ['N' as u8, 'E' as u8, 'S' as u8, 0x1a];
 
@@ -13,6 +13,7 @@ pub(crate) struct Cart {
     header: Header,
     pub(crate) prg_rom: Vec<u8>,
     prg_ram: Vec<u8>,
+    #[allow(dead_code)]
     chr_rom: Vec<u8>,
 }
 
@@ -57,6 +58,7 @@ impl Cart {
     }
 }
 
+#[allow(dead_code)]
 struct Header {
     header_type: HeaderType,
     vertical_mirroring: bool, 
@@ -69,16 +71,18 @@ struct Header {
 }
 
 enum HeaderType {
-    INES(INESHeader), NES2(NES2Header)
+    INES(INESHeader), 
+    #[allow(dead_code)]
+    NES2(NES2Header)
 }
 
 struct INESHeader {
 
 }
 
-bitflags! {
-    pub MapperFlags [vertical_mirroring, battery_ram, trainer, no_mirror]
-}
+// bitflags! {
+//     pub MapperFlags [vertical_mirroring, battery_ram, trainer, no_mirror]
+// }
 
 struct NES2Header {
 
@@ -104,8 +108,8 @@ impl Header {
         let prg_rom_size_raw = bytes.next().ok_or_else(too_short_err)??;
         let chr_rom_size_raw = bytes.next().ok_or_else(too_short_err)??;
 
-        println!("Program ROM size: {prg_rom_size_raw}");
-        println!("Character ROM size: {chr_rom_size_raw}");
+        eprintln!("Program ROM size: {prg_rom_size_raw}");
+        eprintln!("Character ROM size: {chr_rom_size_raw}");
 
         let flags6 = bytes.next().ok_or_else(too_short_err)??;
         let trainer = false;
@@ -113,30 +117,33 @@ impl Header {
         let no_mirror = false;
         let battery_ram = false;
 
-        println!("Flags6: {flags6:08b}");
+        eprintln!("Flags6: {flags6:08b}");
 
         let flags7 = bytes.next().ok_or_else(too_short_err)??;
 
         let nes2_format = flags7 & 0b00001100 == 0b00001100;
 
         if nes2_format {
-            println!("NES2.0 format, (flags7: {flags7:08b})");
+            eprintln!("NES2.0 format, (flags7: {flags7:08b})");
 
             panic!("not implemented")
 
         } else {
-            println!("iNES format, (flags7: {flags7:08b})");
+            eprintln!("iNES format, (flags7: {flags7:08b})");
 
             let prg_rom_size = (prg_rom_size_raw as usize) * 16384;
             let chr_rom_size = (chr_rom_size_raw as usize) * 8192;
 
-            let flags8 = bytes.next().ok_or_else(too_short_err)??;
-            let flags9 = bytes.next().ok_or_else(too_short_err)??;
-            let flags10 = bytes.next().ok_or_else(too_short_err)??;
+            #[allow(unused_variables)]
+            {
+                let flags8 = bytes.next().ok_or_else(too_short_err)??;
+                let flags9 = bytes.next().ok_or_else(too_short_err)??;
+                let flags10 = bytes.next().ok_or_else(too_short_err)??;
+            }
 
             let mapper = (flags7 as u16 & 0xf0) >> 8 | (flags6 as u16 & 0xf0);
 
-            println!("Mapper: {mapper} ({mapper:016b}), f6lo: {flags6:08b}, f7hi: {flags7:08b}");
+            eprintln!("Mapper: {mapper} ({mapper:016b}), f6lo: {flags6:08b}, f7hi: {flags7:08b}");
     
             // Unused
             let _ = bytes.by_ref().take(5).collect::<IOResult<Vec<u8>>>()?;
