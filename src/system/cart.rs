@@ -10,11 +10,11 @@ type IOResult<T> =std::io::Result<T>;
 type ByteResult = IOResult<u8>;
 
 pub(crate) struct Cart {
-    header: Header,
+    pub(crate) header: Header,
     pub(crate) prg_rom: Vec<u8>,
     prg_ram: Vec<u8>,
     #[allow(dead_code)]
-    chr_rom: Vec<u8>,
+    pub(crate) chr_rom: Vec<u8>,
 }
 
 impl Cart {
@@ -30,6 +30,7 @@ impl Cart {
         let prg_ram_size = match header.mapper {
             // 0 => 4096,
             0 => 0x2000,
+            1 => 0,
             mapper => panic!("mapper {mapper} is not implemented")
         };
         let prg_ram = vec![0; prg_ram_size];
@@ -44,7 +45,7 @@ impl Cart {
 
     pub(crate) fn read_prg_byte(&self, addr: usize) -> u8 {
         match self.header.mapper {
-            0 => {
+            0 | 1 => {
                 if addr < 0x6000 {
                     panic!("read outside pgm range: {addr}")
                 } else if addr < 0x8000 {
@@ -59,15 +60,15 @@ impl Cart {
 }
 
 #[allow(dead_code)]
-struct Header {
+pub(crate) struct Header {
     header_type: HeaderType,
-    vertical_mirroring: bool, 
-    battery_ram: bool, 
-    trainer: bool, 
-    no_mirror: bool,
-    prg_rom_size: usize,
-    chr_rom_size: usize,
-    mapper: u16
+    pub(crate) vertical_mirroring: bool, 
+    pub(crate) battery_ram: bool, 
+    pub(crate) trainer: bool, 
+    pub(crate) no_mirror: bool,
+    pub(crate) prg_rom_size: usize,
+    pub(crate) chr_rom_size: usize,
+    pub(crate) mapper: u16
 }
 
 enum HeaderType {
@@ -98,9 +99,10 @@ impl Header {
         // let magic_bytes = bytes.take(HEADER_MAGIC.len());
         for expected in HEADER_MAGIC.iter() {
             let actual = bytes.next().ok_or_else(too_short_err)??;
+            
             // let actual = actual?;
             if actual != *expected {
-                bail!("invalid cart header magic byte: {actual:?} (expected {expected:02x})");
+                bail!("invalid cart header magic byte: {actual:02x} (expected {expected:02x})");
             }
         }
 
@@ -141,7 +143,7 @@ impl Header {
                 let flags10 = bytes.next().ok_or_else(too_short_err)??;
             }
 
-            let mapper = (flags7 as u16 & 0xf0) >> 8 | (flags6 as u16 & 0xf0);
+            let mapper = (flags6 as u16 & 0xf0) >> 4 | (flags7 as u16 & 0xf0);
 
             eprintln!("Mapper: {mapper} ({mapper:016b}), f6lo: {flags6:08b}, f7hi: {flags7:08b}");
     

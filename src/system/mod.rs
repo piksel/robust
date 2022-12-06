@@ -2,7 +2,7 @@ use std::{io::{self, Read, BufRead, Write as IOWrite}, fs, fmt::{self, Write}};
 
 use crate::system::cpu::opcode_map::format_op_byte;
 
-use self::cpu::{CPU, AddressMode};
+use self::{cpu::{CPU, AddressMode}, execution_state::ExecutionState};
 
 use self::cart::Cart;
 use anyhow::{Result, Ok, bail};
@@ -13,16 +13,16 @@ use termcolor as tc;
 pub mod cart;
 pub mod bus;
 pub mod cpu;
-
-type ParseIntResult<T> = std::result::Result<T, std::num::ParseIntError>;
+pub mod execution_state;
+pub mod ppu;
 
 pub struct System {
     ram: Vec<u8>,
-    ppu: Vec<u8>,
+    pub(crate) ppu: ppu::PPU,
     apu: Vec<u8>,
     pub(crate) cpu: CPU,
     pub(crate) cart: Option<Cart>,
-    expect_log: Option<Vec<String>>
+    pub(crate) cycles: u64,
 }
 
 impl System {
@@ -31,16 +31,28 @@ impl System {
         
         System {
             ram: vec![0; 2048],
-            ppu: vec![0; 8],
+            ppu: ppu::PPU::init(),
             apu: vec![0; 0x18],
             cpu,
             cart: None,
-            expect_log: None
+            cycles: 0,
         }
     }
 
     pub(crate) fn load_cart(&mut self, cart_file: &fs::File) -> Result<()> {
         let reader = io::BufReader::new(cart_file);
+
+
+        // for (ix,mb) in reader.bytes().enumerate() {
+        //     match mb {
+        //         Result::Ok(b) => eprint!("{b:02x} "),
+        //         Err(_) => eprint!("!! ")
+        //     }
+        //     if ix > 100 { panic!("TOO FAR!")}
+        // }
+        // println!("");
+
+        // panic!();
         let cart = Cart::new(reader.bytes())?;
 
         // for b in cart.prg_rom.iter() {
@@ -56,44 +68,34 @@ impl System {
         Ok(())
     }
 
-    pub(crate) fn run(&mut self, steps: u32) -> Result<()> {
+    pub fn reset(&mut self) {
+        // Read reset vector
+        let rv = self.read_word(0xfffc);
+        self.cpu.pc = rv;
+    }
 
-        let mut stderr = tc::BufferWriter::stderr(tc::ColorChoice::AlwaysAnsi);
-        let mut bad_colors = tc::ColorSpec::new();
-        bad_colors.set_fg(Some(tc::Color::Red));
+    pub(crate) fn run_cycle(&mut self) -> Result<()> {
 
-        let mut good_colors = tc::ColorSpec::new();
-        good_colors.set_fg(Some(tc::Color::Green));
+        // let mut stderr = tc::BufferWriter::stderr(tc::ColorChoice::AlwaysAnsi);
+        // let mut bad_colors = tc::ColorSpec::new();
+        // bad_colors.set_fg(Some(tc::Color::Red));
 
-        let mut dark_colors = tc::ColorSpec::new();
-        dark_colors.set_fg(Some(tc::Color::Black)).set_intense(true);
+        // let mut good_colors = tc::ColorSpec::new();
+        // good_colors.set_fg(Some(tc::Color::Green));
 
-        let norm_colors = tc::ColorSpec::new();
+        // let mut dark_colors = tc::ColorSpec::new();
+        // dark_colors.set_fg(Some(tc::Color::Black)).set_intense(true);
+
+        // let norm_colors = tc::ColorSpec::new();
 
         // init program counter (for use with test cart)
-        self.cpu.pc = 0xc000;
-
-        let mut cycles = 0u64;
-
-        for step in 0..steps {
-
-            // print!("{step:03}:  PC: {pc:04x}  A:{a:02x} X:{x:02x} Y:{y:02x}  SP: {sp:02x}  Flags: ");
-            // print!("{pc:04X}  A:{a:02X} X:{x:02X} Y:{y:02X} SP: {sp:02x}  ");
-            //print!("");
-
-            //println!("-- [ Step {step} ] ---------------------------------------------------------");
-
-            if let Some(xlog) = &self.expect_log {
-                println!("\nRW {}", xlog[step as usize]);
-            }
 
 
-            let expected = self.get_expected_state(step as usize).unwrap();
+        // loop {
 
-            
-            
+        loop {
 
-            let (op, am, bc) = self.cpu.load(&self);
+            let (op, am, bc) = cpu::load(self);
 
             let byte_count = am.bytes();
             let pc_bytes = vec![
@@ -106,81 +108,51 @@ impl System {
                  cpu: self.cpu.clone(), 
                  pc_bytes, 
                  am: am.clone(), 
-                 cycles,
-                 ppu: (0, 0)
+                 ppu: (self.ppu.scan_row as u16, self.ppu.scan_line),
+                 cycles: self.cycles,
             };
+            // if self.ppu.scan_row > 240 {
 
-            let actual_log = actual.to_string();
-            let expected_log = expected.to_string();
-            
-            
-
-            if actual_log != expected_log {
-
-                let mut buff_expected = stderr.buffer();
-                let mut buff_actual = stderr.buffer();
-
-                buff_actual.set_color(&bad_colors)?;
-                write!(&mut buff_actual, "!! ")?;
-
-                for (a, e) in actual_log.chars().zip(expected_log.chars()) {
-                    if a != e {
-                        buff_actual.set_color(&bad_colors)?;
-                        buff_expected.set_color(&good_colors)?;
-                    } else {
-                        buff_actual.set_color(&norm_colors)?;
-                        buff_expected.set_color(&dark_colors)?;
-                    }
-                    write!(&mut buff_actual, "{a}")?;
-                    write!(&mut buff_expected, "{e}")?;
-                    // print!("{}", if a == e {' '} else {e});
-
-                }
-
-                buff_actual.set_color(&tc::ColorSpec::new().set_fg(Some(tc::Color::White)).set_intense(true))?;
-                write!(&mut buff_actual, "")?;
-                buff_expected.set_color(&norm_colors)?;
-                writeln!(&mut buff_expected)?;
-                // println!();
-                stderr.print(&buff_actual)?;
-                stderr.print(&buff_expected)?;
-
-                // if let Some(xlog) = &self.expect_log {
-                //     println!("RW {}", xlog[step as usize]);
-                // }
+                // let mut buff = stderr.buffer();
+                // buff.set_color(&good_colors)?;
+                // eprint!(&mut buff, "OK ")?;
+                // buff.set_color(&norm_colors)?;
                 
+                // stderr.print(&buff)?;
 
-                //panic!("Actual log did not match expected!")
-            } else {
-                let mut buff = stderr.buffer();
-                buff.set_color(&good_colors)?;
-                write!(&mut buff, "OK ")?;
-                buff.set_color(&norm_colors)?;
-                writeln!(&mut buff, "{actual_log} {step}")?;
-                stderr.print(&buff)?;
+                let actual_log = actual.to_string();
+                eprintln!("{actual_log}");
+            // }
+
+
+            
+      
+
+            let cpu_cycles = op.execute(self, &am);
+            let ppu_cycles = cpu_cycles * 3;
+
+            let scan_row_before = self.ppu.scan_row;
+
+            for _ in 0..ppu_cycles {
+                ppu::tick(self);
             }
 
-            if false {
+            if scan_row_before != 0 && self.ppu.scan_row == 0 {
+                // We have a new frame to draw!
+                break;
+            }
 
-         
-            if expected.cpu.a  != actual.cpu.a  { bail!("Accumulator desync")};
-            if expected.cpu.x  != actual.cpu.x  { bail!("X register desync")};
-            if expected.cpu.y  != actual.cpu.y  { bail!("Y register desync")};
-            if expected.cpu.pc != actual.cpu.pc { bail!("Program Counter desync")};
-            if expected.cpu.status() != actual.cpu.status() {bail!("CPU status flags desync")};
-            if expected.am != actual.am {bail!("Address Mode desync")};
-        }
-            
-
-            cycles += CPU::execute(self, op, am) as u64;
+            //  eprintln!();
+           
             // let cpu = &mut self.cpu;
             // cpu.execute(self, op, am);
+        // }
         }
 
         Ok(())
     }
 
-    pub(crate) fn print_stack(&self) -> Result<()> {
+    pub(crate) fn print_stack(&mut self) -> Result<()> {
         let mut stderr = tc::StandardStream::stderr(tc::ColorChoice::AlwaysAnsi);
         
         write!(&mut stderr, "   ")?;
@@ -221,167 +193,79 @@ impl System {
         Ok(())
     }
 
-    pub(crate) fn load_expected_log(&mut self, file: &fs::File) -> Result<()> {
-
-        let lines = io::BufReader::new(file).lines();
-        self.expect_log = Some(lines.collect::<io::Result<Vec<String>>>()?);
-
-        Ok(())
-    }
-
-    fn get_expected_state(&self, step: usize) -> Result<ExecutionState> {
-        let xlog = self.expect_log.as_ref().unwrap();
-        let row = &xlog[step];
-
-        let chars = &mut row.chars();
-
-        let mut pc_bytes = [0, 0, 0];
-        let mut ppu = (0, 0);
-        let mut cpu = CPU::init();
-
-        cpu.pc = u16::from_str_radix(&chars.take(4).collect::<String>(), 16)?;
-
-        let pc_bytes: Vec<u8> = [
-            chars.skip(2).take(2).collect::<String>().trim(),
-            chars.skip(1).take(2).collect::<String>().trim(),
-            chars.skip(1).take(2).collect::<String>().trim(),
-        ].iter()
-            .take_while(|s| !s.is_empty())
-            .map(|s| u8::from_str_radix(s, 16))
-            .collect::<ParseIntResult<Vec<u8>>>()?;
-
-
-        let byte_count = pc_bytes.len();
-        
-        
-        let op_name: String = chars.skip_while(|c| c.is_whitespace() || *c == '*')
-            .take(3).collect();
-
-        assert_eq!(format_op_byte(pc_bytes[0]), op_name);
-
-        let am = AddressMode::from_str_with_bc(&chars.skip(1).take(26).collect::<String>(), byte_count)?;
-
-        assert_eq!(
-            &chars.skip_while(|c| c.is_whitespace()).take(2).collect::<String>(),
-            "A:"
-        );
-        cpu.a = u8::from_str_radix(&chars.take(2).collect::<String>(), 16).unwrap();
-
-    
-        assert_eq!(&chars.skip(1).take(2).collect::<String>(), "X:");
-        cpu.x = u8::from_str_radix(&chars.take(2).collect::<String>(), 16).unwrap();
-        
-        assert_eq!(&chars.skip(1).take(2).collect::<String>(), "Y:");
-        cpu.y = u8::from_str_radix(&chars.take(2).collect::<String>(), 16).unwrap();
-        
-        assert_eq!(&chars.skip(1).take(2).collect::<String>(), "P:");
-        cpu.set_status(u8::from_str_radix(&chars.take(2).collect::<String>(), 16).unwrap());
-
-        assert_eq!(&chars.skip(1).take(3).collect::<String>(), "SP:");
-        cpu.sp = u8::from_str_radix(&chars.take(2).collect::<String>(), 16).unwrap();
-
-        assert_eq!(&chars.skip(1).take(4).collect::<String>(), "PPU:");
-        ppu.0 = u16::from_str_radix(&chars
-            .take(3).collect::<String>().trim(), 10).unwrap();
-        assert_eq!(chars.next().unwrap(), ',');
-        ppu.1 = u16::from_str_radix(&chars
-                .take(3).collect::<String>().trim(), 10).unwrap();
-
-        assert_eq!(&chars.skip_while(|c| c.is_whitespace()).take(4).collect::<String>(), "CYC:");
-        
-        let cycles = u64::from_str_radix(&chars.take_while(char::is_ascii_digit).collect::<String>(), 10).unwrap();
-
-        Ok(ExecutionState { cpu, pc_bytes, am, cycles, ppu })
-    }
-
 }
 
-struct ExecutionState {
-    cpu: CPU,
-    am: AddressMode,
-    pc_bytes: Vec<u8>,
-    ppu: (u16, u16),
-    cycles: u64,
-}
-
-impl fmt::Display for ExecutionState {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-
-        
-        let bc = self.pc_bytes[0];
-        let op_byte_name = format_op_byte(bc);
-
-        let byte_count = self.am.bytes();
-        let b1 = if byte_count > 0 {
-            format!("{:02X}", self.pc_bytes[1])
-        } else {"  ".to_owned()};
-        let b2 = if byte_count > 1 {
-            format!("{:02X}", self.pc_bytes[2])
-        } else {"  ".to_owned()};
+pub(crate) fn dump_mem<T>(source: T, curr_address: Option<u16>) -> Result<()> 
+    where T: IntoIterator<Item = u8>
+{
+    let mut stderr = tc::StandardStream::stderr(tc::ColorChoice::AlwaysAnsi);
     
-        let op_addr = "";
-    
-        // Use dummy PPU for now
-        let ppu = format!("   ,   ");
-        // let ppu = format!("{:>3},{:>3}", self.ppu.0, self.ppu.1);
-    
-        let p = self.cpu.status();
-        let pc = self.cpu.pc;
-        let a = self.cpu.a;
-        let x = self.cpu.x;
-        let y = self.cpu.y;
-        let sp = self.cpu.sp;
-
-        // Use dummy cycles for now
-        let cycles = 0;
-        // let cycles = self.cycles;
-
-
-        // op_addr should be 27 long if used
-        f.write_fmt(format_args!("{pc:04X}  {bc:02X} {b1} {b2}  {op_byte_name} {op_addr} "))?;
-        f.write_fmt(format_args!("A:{a:02X} X:{x:02X} Y:{y:02X} P:{p:02X} SP:{sp:02X} PPU:{ppu} CYC:{cycles:<6}"))?;
-    
-        // print!("Flags:");
-        f.write_str("  ")?;
-    
-        f.write_char(if self.cpu.sign {'-'} else {'+'})?;
-    
-        f.write_char(if self.cpu.overflow {'O'} else {'-'})?;
-    
-        f.write_char(' ')?;
- 
-        f.write_char(if self.cpu.soft_break {'B'} else {'-'})?;
-    
-        f.write_char(if self.cpu.decimal {'D'} else {'-'})?;
-    
-        f.write_char(if self.cpu.interrupt {'I'} else {'-'})?;
-    
-        f.write_char(if self.cpu.zero {'Z'} else {'-'})?;
-    
-        f.write_char(if self.cpu.carry {'C'} else {'-'})?;
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-        
-        // print!(" P:{p:08b}");
-    
-        // print!("  {bc:02x}  {op:26} {:16}", am.format(bytes));
-        f.write_fmt(format_args!("  {:18}", format!("{:?}", self.am)))?;
-        // f.write_fmt(format_args!("  {op:26} {:16}", format!("{am:?}")));
-    
-        // let debug_02 = self.read_byte(0x02);
-        // let debug_03 = self.read_byte(0x03);
-    
-
-        // println!("  {debug_02:02x}  {debug_03:02x}");
-        fmt::Result::Ok(())
+    write!(&mut stderr, "    ")?;
+    for x in 0..0x10 {
+        // if curr_address.is_some_and(|ca| ca & 0xf == x) {
+        if curr_address.is_some() && curr_address.unwrap() & 0xf == x {
+            stderr.set_color(ColorSpec::new().set_fg(Some(Color::Cyan)).set_intense(true))?;
+        } else {
+            stderr.set_color(ColorSpec::new().set_fg(Some(Color::Black)).set_intense(true))?;
+        }
+        write!(&mut stderr, "{x:02x} ")?;
     }
+    writeln!(&mut stderr)?;
+
+    let mut chars = ['.'; 16];
+
+    for (pos, value) in source.into_iter().enumerate() {
+        let x = pos & 0xf;
+        let y = (pos & 0xfff0) as u16;
+
+        if x == 0 {
+            if curr_address.is_some() && curr_address.unwrap() & 0xfff0 == y  {
+                stderr.set_color(ColorSpec::new().set_fg(Some(Color::Cyan)).set_intense(true))?;
+            } else {
+                stderr.set_color(ColorSpec::new().set_fg(Some(Color::Black)).set_intense(true))?;
+            }
+            write!(&mut stderr, "{y:03x} ").unwrap();
+        }
+        
+        if value == 0x00 {
+            stderr.set_color(ColorSpec::new().set_fg(Some(Color::Black)).set_intense(true))?;
+        } else if value == 0xff {
+            stderr.set_color(ColorSpec::new().set_fg(Some(Color::Magenta)).set_intense(true))?;
+        } else {
+            stderr.set_color(&ColorSpec::new())?;
+        }
+        write!(&mut stderr, "{:02x} ", value)?;
+
+        let val_char = value as char;
+
+        chars[x] = if val_char.is_ascii_graphic() {val_char} else {'.'};
+
+        if x == 0xf {
+
+            writeln!(&mut stderr, "{}", String::from_iter(chars))?;
+            chars = ['.'; 16];
+        }
+    }
+
+    // for y in 0..0x10_u8 {
+        
+        
+
+        
+    //     ;
+    //     for x in 0..0x10 {
+    //         //if y == 0
+    //         let addr = base + x;
+    //         if self.cpu.sp == addr {
+    //             stderr.set_color(ColorSpec::new().set_fg(Some(Color::Green)).set_intense(true))?;
+    //         }
+    //         write!(&mut stderr, "{:02x} ", self.read_byte(CPU::addr_stack(addr)))?;
+
+    //         if self.cpu.sp == addr {
+    //             stderr.set_color(&ColorSpec::new())?;
+    //         }
+    //     }
+    //     writeln!(&mut stderr)?;
+    // }
+    Ok(())
 }

@@ -1,4 +1,4 @@
-use crate::{system::System, util::carrying_add};
+use crate::{system::System};
 
 use super::{AddressMode, Register, get_addr, CPU, addr_relative, addr_absolute, addr_zero, Flag};
 
@@ -20,10 +20,10 @@ pub(crate) enum OpCode {
     Compare(Register), // CMP, CPX, CPY
     Dec(Option<Register>), // DEC works on addresses and X/Y
     Inc(Option<Register>),
-    ShiftLeft,  // TODO: ASL  {adr}:={adr}*2
-    RotateLeft, // TODO: ROL  {adr}:={adr}*2+C
-    ShiftRight, // TODO: LSR  {adr}:={adr}/2
-    RotateRight, // TODO: ROR  {adr}:={adr}/2+C*128
+    ShiftLeft,
+    RotateLeft,
+    ShiftRight,
+    RotateRight,
 
 
     // Move
@@ -52,7 +52,7 @@ pub(crate) enum OpCode {
 }
 
 impl OpCode {
-    pub fn Execute(&self, sys: &mut System, address_mode: &AddressMode) -> u8 {
+    pub fn execute(&self, sys: &mut System, address_mode: &AddressMode) -> u64 {
 
         let mut pc_set = false;
 
@@ -78,7 +78,8 @@ impl OpCode {
                 assert!(matches!(address_mode, AddressMode::Relative));
                 let addr = addr_relative(sys);
                 if sys.cpu.get_flag(flag) == *value {
-                    sys.cpu.pc = sys.cpu.pc.checked_add_signed(addr as i16).expect("program counter overflow!");
+                    sys.cpu.pc = (sys.cpu.pc as i32 + (addr as i32)) as u16;
+                    // sys.cpu.pc = sys.cpu.pc.checked_add_signed(addr as i16).expect("program counter overflow!");
                     // pc_set = true;
                     3
                 } else {2}
@@ -253,37 +254,12 @@ impl OpCode {
             }
             
             OpCode::Sub => {
-                // TODO: The carry use is probably not correct here
-
-                // This instruction subtracts the contents of a memory location to the accumulator together with the not of the carry bit. 
-                // If overflow occurs the carry bit is clear, this enables multiple byte subtraction to be performed.
                 let addr = get_addr(sys, &address_mode);
                 let sub = sys.read_byte(addr) as u16;
                 let ack = sys.cpu.a as u16;
 
                 let carry = if sys.cpu.carry {0} else {1};
 
-                // let mut ack_lo = (ack & 0b1111) - (sub &0b1111) - carry;
-                // if (ack_lo & 0b1_0000)!=0 { ack_lo -= 6; }
-
-                // let mut ack_hi = (ack >> 4) - (sub >> 4) - (ack_lo & 0b1_0000);
-                // if (ack_hi & 0b1_0000)!=0 { ack_hi -= 6; }
-
-                // let value = ack - sub - carry;
-                // sys.cpu.carry     = value & 0b1_0000_0000 != 0;
-                // sys.cpu.zero      = value & 0b0_1111_1111 != 0;
-                // sys.cpu.overflow  = ((value ^ sub) & 0b1000_0000 != 0) 
-                //                     && (ack & sub) & 0b1000_0000 != 0;
-                // sys.cpu.sign      = value & 0b1000_0000 != 0;
-                // sys.cpu.a         = ((ack_hi << 4) | (ack_lo & 0b1111)) as u8;
-
-                // let lhs_sign = (lhs & 0b10000000) != 0;
-                // let rhs_sign = (rhs & 0b10000000) != 0;
-                // let org_sign = lhs_sign != rhs_sign;
-
-
-                // unsigned char Val = MemGet(CalcAddr);
-                // let sub = sys.read_byte(addr) as u16;
                 
                 // int result = A + ~Val + FC;
                 let result = ack + (sub^0xff) + (carry ^ 1);
@@ -300,26 +276,6 @@ impl OpCode {
                 // FN = (A >> 7) & 1;
                 sys.cpu.sign = ((sys.cpu.a >> 7) & 1) != 0;
                 
-
-                
-                // let (value, overflow) = sys.cpu.a.overflowing_sub(rhs + carry);
-                // sys.cpu.a = value;
-                // sys.cpu.update_flags(value);
-
-                // sys.cpu.overflow = if overflow {false} else {org_sign != sys.cpu.sign};
-
-                // sys.cpu.carry = (lhs as u16 - rhs as u16 - carry as u16) & 256u16 != 0;
-
-                // if overflow {
-                //     sys.cpu.carry = false;
-                // }
-
-                // if !sys.cpu.carry {
-                //     sys.cpu.carry = (org_sign != sys.cpu.sign);
-                // }
-
-                // eprintln!("{lhs} - {rhs} = {value} (overflow: {overflow})");
-                eprintln!("{ack} - {sub} (- {carry}) = {result} ({result:016b})");
                 0
             }
                         
@@ -492,6 +448,7 @@ impl OpCode {
             sys.cpu.pc += 1;
         }
 
+        sys.cycles += cycles;
         cycles
     }
 }

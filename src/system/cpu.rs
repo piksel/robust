@@ -9,6 +9,8 @@ use anyhow::Result;
 pub(crate) mod opcode;
 pub(crate) mod opcode_map;
 
+pub(crate) use opcode_map::load;
+
 #[derive(Clone)]
 pub struct CPU {
     pub(crate) pc: u16,
@@ -54,15 +56,6 @@ impl CPU {
             Some(Register::Y) => base.wrapping_add(self.y as u16), // + (self.y as u16),
             Some(r) => panic!("indexing on register {r:?} is not implemented")
         }
-    }
-
-   
-
-    pub(crate) fn execute(sys: &mut System, op: OpCode, am: AddressMode) -> u8 {
-        // let cpu = &mut sys.cpu;
-        
-        op.Execute(sys, &am)
-        
     }
 
     fn set_reg(&mut self, register: &Register, value: u8) {
@@ -112,7 +105,7 @@ impl CPU {
         sys.cpu.sp = sys.cpu.sp.checked_add(1).expect("stack overflow!");
         let addr = CPU::addr_stack(sys.cpu.sp);
         let value = sys.read_byte(addr);
-        println!("{value:04x} read from stack at {addr:04x}");
+        // println!("{value:04x} read from stack at {addr:04x}");
         value
     }
 
@@ -176,9 +169,11 @@ mod tests {
         fn test_roundtrip(sent: u8) {
             let mut cpu = CPU::init();
             cpu.set_status(sent);
-            let recv = cpu.status();
+            let actual = cpu.status();
 
-            assert_eq!(sent, recv, "{sent:08b} != {recv:08b}");
+            let expected = sent & 0b1110_1111;
+
+            assert_eq!(expected, actual, "{expected:08b} != {actual:08b}");
         }
 
         test_roundtrip(0b1111_1111);
@@ -215,7 +210,7 @@ pub(crate) fn addr_zero(sys: &mut System, reg: &Option<Register>) -> u16 {
     let base = sys.read_byte(sys.cpu.pc);
 
     let sum = base.wrapping_add(offset);
-    eprintln!("Base: {base:04x} offset: {offset:02x} sum:{sum:02x}");
+    // eprintln!("Base: {base:04x} offset: {offset:02x} sum:{sum:02x}");
     sum  as u16
         
     

@@ -11,12 +11,14 @@ $4018-$401F	$0008	APU and I/O functionality that is normally disabled. See CPU T
 $4020-$FFFF	$BFE0	Cartridge space: PRG ROM, PRG RAM, and mapper registers (See Note
 */
 
+use super::ppu;
+
 impl super::System {
 
-    pub fn read_byte(&self, addr: u16) -> u8 {
+    pub fn read_byte(&mut self, addr: u16) -> u8 {
         match self.map_addr(addr) {
             BusTarget::RAM(ra) => self.ram[ra],
-            BusTarget::PPU(ra) => self.ppu[ra],
+            BusTarget::PPU(ra) => ppu::read(self, ra as u8),
             BusTarget::APU(ra) => self.apu[ra],
             BusTarget::PRG => {
                 match &self.cart {
@@ -30,12 +32,13 @@ impl super::System {
     pub fn write_byte(&mut self, addr: u16, value: u8) {
         match self.map_addr(addr) {
             BusTarget::RAM(ra) => self.ram[ra] = value,
-            BusTarget::PPU(ra) => self.ppu[ra] = value,
+            BusTarget::PPU(ra) => ppu::write(self, ra as u8, value),
             BusTarget::APU(ra) => self.apu[ra] = value,
             BusTarget::PRG => {
                 match &self.cart {
                     None => panic!("tried to read from cart when not loaded"),
-                    Some(_cart) => panic!("writing to cart is not implemented (tried writing {value:02x} to {addr:04x})")
+                    Some(_cart) => eprintln!("tried to write to 0x{value:02x} to cart ({addr:04x}) which is not implemented")
+                    // Some(_cart) => panic!("writing to cart is not implemented (tried writing {value:02x} to {addr:04x})")
                 }
             },
         }
@@ -43,13 +46,13 @@ impl super::System {
 
 
 
-    pub fn read_word(&self, addr: u16) -> u16 {
+    pub fn read_word(&mut self, addr: u16) -> u16 {
         let high = self.read_byte(addr + 1);
         let low = self.read_byte(addr);
         ((high as u16) << 8) | low as u16
     }
 
-    pub fn read_zero_word(&self, addr: u8) -> u16 {
+    pub fn read_zero_word(&mut self, addr: u8) -> u16 {
         let high = self.read_byte(addr.wrapping_add(1) as u16);
         let low = self.read_byte(addr as u16);
         ((high as u16) << 8) | low as u16
