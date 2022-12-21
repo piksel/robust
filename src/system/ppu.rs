@@ -1,5 +1,3 @@
-use std::hint::unreachable_unchecked;
-
 use super::System;
 
 const PRE_RENDER_LINE: u16 = 245;
@@ -107,6 +105,7 @@ pub(crate) fn tick(sys: &mut System) {
     if row <= 239 {
         if col >= 4 && col < 260 {
             let nm_base = (sys.ppu.nametable_address() - 0x2000) as usize;
+            let at_base = nm_base + 0x360  as usize;
             let [scroll_x, scroll_y] = [0, 0];//sys.ppu.scroll;
             let y = (row + scroll_y as u16) as usize;
             let x = ((col - 4) + scroll_x as u16) as usize;
@@ -114,9 +113,19 @@ pub(crate) fn tick(sys: &mut System) {
             let nm_y = (y / 8) * 32;
             let nm_x = x / 8;
             let nm_addr = (nm_base + nm_y + nm_x) as usize;
+            let at_addr = (at_base + (nm_y/2) + (nm_x/2)) as usize;
 
             // eprintln!("{nm_y} ({y}) x {nm_x} ({x}) => {nm_addr}");
             let tile_index = sys.ppu.vram[nm_addr];
+            let attributes = sys.ppu.vram[at_addr];
+
+            let cbits = match (nm_x % 2, nm_y % 2) {
+                (0,0) => attributes & 0x3, // topleft
+                (1,0) => attributes >> 2 & 0x3, // topright
+                (0,1) => attributes >> 4 & 0x3, // bottomleft
+                (1,1) => attributes >> 6 & 0x3, // bottomright
+                (y,x) => panic!("invalid attribute pos {x},{y}"),
+            };
 
             let base_addr = (tile_index as u16) << 4;
             let upper_addr = base_addr + ((y as u16) % 8);
@@ -129,7 +138,9 @@ pub(crate) fn tick(sys: &mut System) {
 
             let mask = 0b1000_0000u8 >> (x % 8);
             let color = if (upper_sliver & mask) != 0 {128u8} else {0u8}
-                + if (lower_sliver & mask) != 0 {64} else {0};
+                + if (lower_sliver & mask) != 0 {64} else {0}
+                + if (cbits & 0x1) != 0 {32} else {0}
+                + if (cbits & 0x2) != 0 {16} else {0};
 
             
 
@@ -150,6 +161,11 @@ pub(crate) fn tick(sys: &mut System) {
 
 
             sys.ppu.mono_frame_buffer[y][x] = color;
+
+
+
+            // TODO: Sprites!
+
         } else if col > 260 {
             // eprintln!();
         }
@@ -215,7 +231,7 @@ pub(crate) fn write(sys: &mut System, address: u8, value: u8) {
             bump_addr(sys);
         }
         _ => panic!("invalid PPU address {address}"),
-    }
+     }
 
     eprintln!("Wrote to PPU ${address}: 0x{value:02x}!");
 }
@@ -252,6 +268,9 @@ pub(crate) fn read(sys: &mut System, address: u8) -> u8 {
             // clear address latch
             sys.ppu.addr_lsb = false;
             sys.ppu.scroll_y = false;
+
+            eprintln!("Read from PPUSTATUS: {value:08b}");
+
             value
         }
         3 => sys.ppu.oam_addr,

@@ -28,8 +28,8 @@ impl fmt::Display for ExecutionState {
         let op_addr = "";
     
         // Use dummy PPU for now
-        // let ppu = format!("   ,   ");
-        let ppu = format!("{:>3},{:>3}", self.ppu.0, self.ppu.1);
+        let ppu = format!("   ,   ");
+        // let ppu = format!("{:>3},{:>3}", self.ppu.0, self.ppu.1);
     
         let p = self.cpu.status();
         let pc = self.cpu.pc;

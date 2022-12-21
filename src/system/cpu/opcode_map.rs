@@ -1,12 +1,9 @@
-use std::fmt::Display;
-
 use crate::system::System;
-
-use super::{CPU, opcode::OpCode, AddressMode, Flag, Register};
+use crate::system::cpu::{self, opcode::OpCode, AddressMode, Flag, Register};
 
 
 pub(crate) fn load(sys: &mut System) -> (OpCode, AddressMode, u8) {
-    let byte_code = sys.read_byte(sys.cpu.pc);
+    let byte_code = cpu::shift_pc(sys);
     let (op, am) = match byte_code {
         
         // JMP
@@ -62,6 +59,7 @@ pub(crate) fn load(sys: &mut System) -> (OpCode, AddressMode, u8) {
         // NOP, BRK
         0xea => (OpCode::NoOp, AddressMode::Implied),
         0x00 => (OpCode::Break, AddressMode::Implied),
+       
         // INVALID
         0x04 => (OpCode::NoOp, AddressMode::Zero(None)),
         0x44 => (OpCode::NoOp, AddressMode::Zero(None)),
@@ -88,18 +86,72 @@ pub(crate) fn load(sys: &mut System) -> (OpCode, AddressMode, u8) {
         0x93 => (OpCode::StoreHack(Register::A, Register::X), AddressMode::Indirect(Some(Register::Y))),
         0x97 => (OpCode::StoreHack(Register::A, Register::X), AddressMode::Zero(Some(Register::Y))),
         // SHA:
+        /*
+        Stores A AND X AND (high-byte of addr. + 1) at addr.
+        unstable: sometimes 'AND (H+1)' is dropped, page boundary crossings may not work 
+                  (with the high-byte of the value used as the high-byte of the address)
+        */
         // 0x9f => (OpCode::LoadHack(Register::A, Register::X), AddressMode::Absolute(Some(Register::Y))),
 
+        // Nop + Sub 🤮
         0xeb => (OpCode::Sub, AddressMode::Immediate),
 
-        0xc3 => (OpCode::DecHack, AddressMode::Indirect(Some(Register::X))),
-        0xc7 => (OpCode::DecHack, AddressMode::Zero(None)),
-        0xcf => (OpCode::DecHack, AddressMode::Absolute(None)),
-        0xd3 => (OpCode::DecHack, AddressMode::Indirect(Some(Register::Y))),
-        0xd7 => (OpCode::DecHack, AddressMode::Zero(Some(Register::X))),
-        0xdb => (OpCode::DecHack, AddressMode::Absolute(Some(Register::Y))),
-        0xdf => (OpCode::DecHack, AddressMode::Absolute(Some(Register::X))),
+        // Inc + Sub
+        0xe3 => (OpCode::IncSubHack, AddressMode::Indirect(Some(Register::X))),
+        0xe7 => (OpCode::IncSubHack, AddressMode::Zero(None)),
+        0xef => (OpCode::IncSubHack, AddressMode::Absolute(None)),
+        0xf3 => (OpCode::IncSubHack, AddressMode::Indirect(Some(Register::Y))),
+        0xf7 => (OpCode::IncSubHack, AddressMode::Zero(Some(Register::X))),
+        0xfb => (OpCode::IncSubHack, AddressMode::Absolute(Some(Register::Y))),
+        0xff => (OpCode::IncSubHack, AddressMode::Absolute(Some(Register::X))),
 
+        // Dec + Cmp
+        0xc3 => (OpCode::DecCmpHack, AddressMode::Indirect(Some(Register::X))),
+        0xc7 => (OpCode::DecCmpHack, AddressMode::Zero(None)),
+        0xcf => (OpCode::DecCmpHack, AddressMode::Absolute(None)),
+        0xd3 => (OpCode::DecCmpHack, AddressMode::Indirect(Some(Register::Y))),
+        0xd7 => (OpCode::DecCmpHack, AddressMode::Zero(Some(Register::X))),
+        0xdb => (OpCode::DecCmpHack, AddressMode::Absolute(Some(Register::Y))),
+        0xdf => (OpCode::DecCmpHack, AddressMode::Absolute(Some(Register::X))),
+
+        // Asl + Ora
+        0x03 => (OpCode::ShiftLeftOrHack, AddressMode::Indirect(Some(Register::X))),
+        0x07 => (OpCode::ShiftLeftOrHack, AddressMode::Zero(None)),
+        0x0f => (OpCode::ShiftLeftOrHack, AddressMode::Absolute(None)),
+        0x13 => (OpCode::ShiftLeftOrHack, AddressMode::Indirect(Some(Register::Y))),
+        0x17 => (OpCode::ShiftLeftOrHack, AddressMode::Zero(Some(Register::X))),
+        0x1b => (OpCode::ShiftLeftOrHack, AddressMode::Absolute(Some(Register::Y))),
+        0x1f => (OpCode::ShiftLeftOrHack, AddressMode::Absolute(Some(Register::X))),
+
+        // Rol + And
+        0x23 => (OpCode::RotLeftAndHack, AddressMode::Indirect(Some(Register::X))),
+        0x27 => (OpCode::RotLeftAndHack, AddressMode::Zero(None)),
+        0x2f => (OpCode::RotLeftAndHack, AddressMode::Absolute(None)),
+        0x33 => (OpCode::RotLeftAndHack, AddressMode::Indirect(Some(Register::Y))),
+        0x37 => (OpCode::RotLeftAndHack, AddressMode::Zero(Some(Register::X))),
+        0x3b => (OpCode::RotLeftAndHack, AddressMode::Absolute(Some(Register::Y))),
+        0x3f => (OpCode::RotLeftAndHack, AddressMode::Absolute(Some(Register::X))),
+
+        // Lsr + Eor, M = 0 -> [76543210] -> C, A EOR M -> A
+        0x43 => (OpCode::ShiftRightOrHack, AddressMode::Indirect(Some(Register::X))),
+        0x47 => (OpCode::ShiftRightOrHack, AddressMode::Zero(None)),
+        0x4f => (OpCode::ShiftRightOrHack, AddressMode::Absolute(None)),
+        0x53 => (OpCode::ShiftRightOrHack, AddressMode::Indirect(Some(Register::Y))),
+        0x57 => (OpCode::ShiftRightOrHack, AddressMode::Zero(Some(Register::X))),
+        0x5b => (OpCode::ShiftRightOrHack, AddressMode::Absolute(Some(Register::Y))),
+        0x5f => (OpCode::ShiftRightOrHack, AddressMode::Absolute(Some(Register::X))),
+
+        // Ror + Adc, M = C -> [76543210] -> C, A + M + C -> A, C
+        0x63 => (OpCode::RotRightAddHack, AddressMode::Indirect(Some(Register::X))),
+        0x67 => (OpCode::RotRightAddHack, AddressMode::Zero(None)),
+        0x6f => (OpCode::RotRightAddHack, AddressMode::Absolute(None)),
+        0x73 => (OpCode::RotRightAddHack, AddressMode::Indirect(Some(Register::Y))),
+        0x77 => (OpCode::RotRightAddHack, AddressMode::Zero(Some(Register::X))),
+        0x7b => (OpCode::RotRightAddHack, AddressMode::Absolute(Some(Register::Y))),
+        0x7f => (OpCode::RotRightAddHack, AddressMode::Absolute(Some(Register::X))),
+
+
+        // --- END OF INVALID ----------------------------------------------------
 
         // ORA
         0x09 => (OpCode::Or, AddressMode::Immediate),

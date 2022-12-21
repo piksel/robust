@@ -11,3 +11,7 @@ anyhow = "1.0"
 color-backtrace = "0.5.1"
 termcolor = "1.0"
 minifb = "0.23"
+clap = { version = "4.0.29", features = ["derive"] }
+imageproc = "0.23.0"
+image = { version = "0.24.5", features = ["rgb"] }
+rusttype = "0.9.3"

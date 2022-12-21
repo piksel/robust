@@ -4,7 +4,7 @@ use std::{fs, io::{self, Write as IOWrite, BufRead}, fmt::{self, Write}};
 
 type ParseIntResult<T> = std::result::Result<T, std::num::ParseIntError>;
 
-use crate::system::{self, cpu, execution_state::ExecutionState};
+use crate::system::{self, cpu, execution_state::ExecutionState, addr::Addr};
 
 #[test]
 fn matches_nestest() {
@@ -12,7 +12,7 @@ fn matches_nestest() {
         "carts/nestest.nes", 
         "carts/nestest.log", 
         0xc000, 
-        5800).is_ok());
+        8800).is_ok());
     
 
 }
@@ -43,7 +43,7 @@ fn run_with_expect_log(cart_file: &str, log_file: &str, start_pc: u16, steps: us
     let norm_colors = ColorSpec::new();
 
     // init program counter (for use with test cart)
-    system.cpu.pc = 0xc000;
+    system.cpu.pc = Addr(0xc000);
 
     let mut cycles = 0u64;
 
@@ -65,17 +65,14 @@ fn run_with_expect_log(cart_file: &str, log_file: &str, start_pc: u16, steps: us
         
         
 
+        let cpu = system.cpu.clone();
         let (op, am, bc) = cpu::load(&mut system);
 
-        let byte_count = am.bytes();
-        let pc_bytes = vec![
-            bc,
-            if byte_count > 0 {system.read_byte(system.cpu.pc.wrapping_add(1))} else {0},
-            if byte_count > 1 {system.read_byte(system.cpu.pc.wrapping_add(2))} else {0},
-        ];
-
+        let byte_count = am.bytes() + 1;
+        let pc_bytes = (0..byte_count).map(|i| system.peek_byte(cpu.pc + (i as i8))).collect();
+        
         let actual = ExecutionState {
-                cpu: system.cpu.clone(), 
+                cpu, 
                 pc_bytes, 
                 am: am.clone(), 
                 cycles: system.cycles,
@@ -134,13 +131,14 @@ fn run_with_expect_log(cart_file: &str, log_file: &str, start_pc: u16, steps: us
 
         if true {
 
-        
-            if expected.cpu.a  != actual.cpu.a  { bail!("Accumulator desync")};
-            if expected.cpu.x  != actual.cpu.x  { bail!("X register desync")};
-            if expected.cpu.y  != actual.cpu.y  { bail!("Y register desync")};
-            if expected.cpu.pc != actual.cpu.pc { bail!("Program Counter desync")};
-            if expected.cpu.status() != actual.cpu.status() {bail!("CPU status flags desync")};
-            if expected.am != actual.am {bail!("Address Mode desync")};
+            compare_states(expected, actual).map_err(|err| {
+                let ram = &system.ram;
+                let pc = system.cpu.pc;
+                // let _ = crate::system::dump_mem(ram, Some(pc));
+                // let _ = system.print_stack();
+                err
+            })?;
+
         }
         
 
@@ -151,6 +149,17 @@ fn run_with_expect_log(cart_file: &str, log_file: &str, start_pc: u16, steps: us
 
     Ok(())
 
+}
+
+fn compare_states(expected: ExecutionState, actual: ExecutionState) -> Result<(), anyhow::Error> {
+    if expected.cycles != actual.cycles  { bail!("Cycle desync")};
+    if expected.cpu.a  != actual.cpu.a   { bail!("Accumulator desync")};
+    if expected.cpu.x  != actual.cpu.x   { bail!("X register desync")};
+    if expected.cpu.y  != actual.cpu.y   { bail!("Y register desync")};
+    if expected.cpu.pc != actual.cpu.pc  { bail!("Program Counter desync")};
+    if expected.cpu.status() != actual.cpu.status() {bail!("CPU status flags desync")};
+    if expected.am != actual.am {bail!("Address Mode desync")};
+    return Ok(())
 }
 
 
@@ -177,7 +186,7 @@ impl StateLog {
         let mut ppu = (0, 0);
         let mut cpu = cpu::CPU::init();
     
-        cpu.pc = u16::from_str_radix(&chars.take(4).collect::<String>(), 16)?;
+        cpu.pc = u16::from_str_radix(&chars.take(4).collect::<String>(), 16)?.into();
     
         let pc_bytes: Vec<u8> = [
             chars.skip(2).take(2).collect::<String>().trim(),
