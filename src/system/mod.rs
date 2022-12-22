@@ -90,7 +90,7 @@ impl System {
         self.cpu.pc = rv;
     }
 
-    pub fn run_cycle(&mut self) -> Result<()> {
+    pub fn run_cycle(&mut self) -> Result<ExecutionState> {
 
         // let mut stderr = tc::BufferWriter::stderr(tc::ColorChoice::AlwaysAnsi);
         // let mut bad_colors = tc::ColorSpec::new();
@@ -109,7 +109,27 @@ impl System {
 
         // loop {
 
+        let mut nmi_handled = false;
         loop {
+
+            if self.ppu.status & 0b1000_0000 != 0 {
+                if !nmi_handled {
+                    CPU::stack_push_word(self, self.cpu.pc.into());
+                    CPU::stack_push_byte(self, self.cpu.status());
+
+                    let nmi_handler_addr = self.read_addr(0xfffa);
+                    self.cpu.pc = nmi_handler_addr;
+
+                    // eprintln!("NMI! => {nmi_handler_addr}");
+                    
+                    nmi_handled = true;
+                    
+                }
+
+            } else {
+                nmi_handled = false;
+            }
+
 
             let cpu = self.cpu.clone();
             let (op, am, bc) = cpu::load(self);
@@ -159,7 +179,7 @@ impl System {
 
             if scan_row_before != 0 && self.ppu.scan_row == 0 {
                 // We have a new frame to draw!
-                return Ok(());
+                return Ok(actual);
             }
 
             //  eprintln!();

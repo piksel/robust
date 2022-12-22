@@ -34,6 +34,8 @@ fn main() -> Result<()> {
         panic!("{}", e);
     });
 
+    let mut show_test_regs = false;
+
     let font = Font::from_bytes(*include_bytes!("../../fonts/PixelOperatorMonoHB.bmf"));
 
     // Limit to max ~60 fps update rate
@@ -70,7 +72,7 @@ fn main() -> Result<()> {
 
     while window.is_open() && !window.is_key_down(Key::Escape) {
 
-        if true {
+        // if true {
             for key in window.get_keys_pressed(KeyRepeat::No) {
                 if let Some((cid, btn)) = map_key_to_button(key) {
                     system.apu.set_controller_button(cid, btn, true);
@@ -83,8 +85,12 @@ fn main() -> Result<()> {
                 }
             }
 
+            if window.is_key_down(Key::T) {
+                show_test_regs = !show_test_regs;
+            }
 
-            system.run_cycle().or_else(|e| {
+
+            let last_state = system.run_cycle().or_else(|e| {
                 eprintln!("\nStack:");
                 system.print_stack()?;
                 eprintln!();
@@ -116,7 +122,7 @@ fn main() -> Result<()> {
                 // panic!("whoa");
                 // break;
             }
-        }
+        // }
         font.draw_text(&mut buffer, 10, 10, &format!("Cycle: {}", system.cycles), 1)?;
 
         let now = std::time::Instant::now();
@@ -125,6 +131,24 @@ fn main() -> Result<()> {
         let fps = 1.0 / render_time.as_secs_f64();
 
         font.draw_text(&mut buffer, 10, 30, &format!("FPS: {:.2}", fps), 1)?;
+
+        let btns = "ABESUDLR";
+        
+        let btns_text = String::from_iter(btns.chars().enumerate().map(|(i, c)| {
+            if system.apu.controller1.get(i as u8) {c} else {' '}
+        }));
+
+        let state_text = last_state.to_string();
+        let (state_a, state_b) = state_text.split_at(46);
+
+        font.draw_text(&mut buffer, 10, HEIGHT - 48, state_a, 1)?;
+        font.draw_text(&mut buffer, 10, HEIGHT - 32, state_b, 1)?;
+        font.draw_text(&mut buffer, 10, HEIGHT - 16, &btns_text, 1)?;
+
+        if show_test_regs {
+            let test_regs_text = format!("{:02x} {:02x}", system.peek_byte(2), system.peek_byte(3));
+            font.draw_text(&mut buffer, WIDTH-64, 16, &test_regs_text, 1)?;
+        }
 
         last_frame = now;
 

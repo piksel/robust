@@ -2,7 +2,7 @@ use crate::system::cpu;
 use std::fmt::{self, Write};
 
 
-pub(crate) struct ExecutionState {
+pub struct ExecutionState {
     pub cpu: cpu::CPU,
     pub am: cpu::AddressMode,
     pub pc_bytes: Vec<u8>,

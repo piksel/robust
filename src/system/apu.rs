@@ -25,35 +25,35 @@ pub struct ControllerState {
 }
 
 pub enum ControllerButton {
-    Right = 1 << 0,
-    Left = 1 << 1,
-    Down = 1 << 2,
-    Up = 1 << 3,
-    Start = 1 << 4,
-    Select = 1 << 5,
-    B = 1 << 6,
-    A = 1 << 7,
+    Right = 1 << 7,
+    Left = 1 << 6,
+    Down = 1 << 5,
+    Up = 1 << 4,
+    Start = 1 << 3,
+    Select = 1 << 2,
+    B = 1 << 1,
+    A = 1 << 0,
 }
 
 impl ControllerState {
 
-    pub fn right(&self)  -> bool { self.get(0) }
-    pub fn left(&self)   -> bool { self.get(1) }
-    pub fn down(&self)   -> bool { self.get(2) }
-    pub fn up(&self)     -> bool { self.get(3) }
-    pub fn start(&self)  -> bool { self.get(4) }
-    pub fn select(&self) -> bool { self.get(5) }
-    pub fn b(&self)      -> bool { self.get(6) }
-    pub fn a(&self)      -> bool { self.get(7) }
+    pub fn right(&self)  -> bool { self.get(7) }
+    pub fn left(&self)   -> bool { self.get(6) }
+    pub fn down(&self)   -> bool { self.get(5) }
+    pub fn up(&self)     -> bool { self.get(4) }
+    pub fn start(&self)  -> bool { self.get(3) }
+    pub fn select(&self) -> bool { self.get(2) }
+    pub fn b(&self)      -> bool { self.get(1) }
+    pub fn a(&self)      -> bool { self.get(0) }
 
-    pub fn set_right(&mut self, v: bool)  { self.set(0, v) }
-    pub fn set_left(&mut self, v: bool)   { self.set(1, v) }
-    pub fn set_down(&mut self, v: bool)   { self.set(2, v) }
-    pub fn set_up(&mut self, v: bool)     { self.set(3, v) }
-    pub fn set_start(&mut self, v: bool)  { self.set(4, v) }
-    pub fn set_select(&mut self, v: bool) { self.set(5, v) }
-    pub fn set_b(&mut self, v: bool)      { self.set(6, v) }
-    pub fn set_a(&mut self, v: bool)      { self.set(7, v) }
+    pub fn set_right(&mut self, v: bool)  { self.set(7, v) }
+    pub fn set_left(&mut self, v: bool)   { self.set(6, v) }
+    pub fn set_down(&mut self, v: bool)   { self.set(5, v) }
+    pub fn set_up(&mut self, v: bool)     { self.set(4, v) }
+    pub fn set_start(&mut self, v: bool)  { self.set(3, v) }
+    pub fn set_select(&mut self, v: bool) { self.set(2, v) }
+    pub fn set_b(&mut self, v: bool)      { self.set(1, v) }
+    pub fn set_a(&mut self, v: bool)      { self.set(0, v) }
     
     pub fn poll(&mut self) -> bool {
         let value = self.get(self.step);
@@ -78,7 +78,7 @@ impl ControllerState {
         }
     }
 
-    fn get(&self, index: u8) -> bool {
+    pub fn get(&self, index: u8) -> bool {
         self.buttons & mask(index) != 0
     }
 }
@@ -106,7 +106,7 @@ impl APU {
 }
 
 pub fn read(sys: &mut System, addr: u8) -> u8 {
-    eprintln!("Read from APU ${:02x}", addr);
+    // eprintln!("Read from APU ${:02x}", addr);
     match addr {
         0x16 => if sys.apu.controller1.poll() {0} else {1},
         0x17 => if sys.apu.controller2.poll() {0} else {1},
@@ -118,7 +118,7 @@ pub fn read(sys: &mut System, addr: u8) -> u8 {
 pub(crate) fn write(sys: &mut System, addr: u8, value: u8) {
     match addr {
         0x16 => {
-            eprintln!("POLLING CONTROLLER! {:08b}", value);
+            //eprintln!("POLLING CONTROLLER! {:08b}", value);
             sys.apu.polling_controller = (value & 1) != 0;
             sys.apu.polling_expansion = (value & 2) != 0;
         }

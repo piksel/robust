@@ -72,7 +72,7 @@ impl CPU {
         }
     }
 
-    fn stack_push_word(sys: &mut System, value: u16) {
+    pub fn stack_push_word(sys: &mut System, value: u16) {
         sys.cpu.sp = sys.cpu.sp.checked_sub(1).expect("stack overflow!");
         let addr = CPU::addr_stack(sys.cpu.sp);
         sys.write_word(addr, value);
@@ -80,7 +80,7 @@ impl CPU {
         // println!("{value:04x} written to stack at {addr:04x}");
     }
 
-    fn stack_push_byte(sys: &mut System, value: u8) {
+    pub fn stack_push_byte(sys: &mut System, value: u8) {
         let addr = CPU::addr_stack(sys.cpu.sp);
         sys.write_byte(addr, value);
         sys.cpu.sp = sys.cpu.sp.checked_sub(1).expect("stack overflow!");
@@ -325,7 +325,7 @@ pub(crate) enum Flag {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum Register {
+pub enum Register {
     A,
     X,
     Y,
@@ -333,7 +333,7 @@ pub(crate) enum Register {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum AddressMode {
+pub enum AddressMode {
     Absolute(Option<Register>),
     Zero(Option<Register>),
     Indirect(Option<Register>),

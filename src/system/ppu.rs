@@ -6,7 +6,7 @@ const POST_RENDER_LINE: u16 = 240;
 pub struct PPU {
     control: u8,
     mask: u8,
-    status: u8,
+    pub status: u8,
     oam_addr: u8,
     oam_data: u8,
     scroll: [u8; 2],
@@ -199,7 +199,7 @@ pub(crate) fn write(sys: &mut System, address: u8, value: u8) {
                 sys.ppu.scroll[1] = 0;
             }
             sys.ppu.scroll_y = !sys.ppu.scroll_y;
-            eprintln!("PPU scroll set to {} by {}!", sys.ppu.scroll[0], sys.ppu.scroll[1]);
+            // eprintln!("PPU scroll set to {} by {}!", sys.ppu.scroll[0], sys.ppu.scroll[1]);
         }
         6 => {
             if sys.ppu.addr_lsb {
@@ -209,7 +209,7 @@ pub(crate) fn write(sys: &mut System, address: u8, value: u8) {
                 sys.ppu.addr = (value as u16) << 8;
             }
             sys.ppu.addr_lsb = !sys.ppu.addr_lsb;
-            eprintln!("PPU address set to 0x{:04x}!", sys.ppu.addr);
+            // eprintln!("PPU address set to 0x{:04x}!", sys.ppu.addr);
         }
         7 => {
             if sys.ppu.addr < 0x2000 {
@@ -233,7 +233,7 @@ pub(crate) fn write(sys: &mut System, address: u8, value: u8) {
         _ => panic!("invalid PPU address {address}"),
      }
 
-    eprintln!("Wrote to PPU ${address}: 0x{value:02x}!");
+    // eprintln!("Wrote to PPU ${address}: 0x{value:02x}!");
 }
 
 fn bump_addr(sys: &mut System) {
@@ -269,7 +269,7 @@ pub(crate) fn read(sys: &mut System, address: u8) -> u8 {
             sys.ppu.addr_lsb = false;
             sys.ppu.scroll_y = false;
 
-            eprintln!("Read from PPUSTATUS: {value:08b}");
+            // eprintln!("Read from PPUSTATUS: {value:08b}");
 
             value
         }
@@ -281,7 +281,7 @@ pub(crate) fn read(sys: &mut System, address: u8) -> u8 {
         _ => panic!("invalid PPU address {address}"),
     };
     if value != 0 {
-        eprintln!("Read from PPU ${address}: 0x{value:02x}!");
+        // eprintln!("Read from PPU ${address}: 0x{value:02x}!");
     }
     value
 }
