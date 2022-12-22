@@ -12,7 +12,7 @@ fn matches_nestest() {
         "carts/nestest.nes", 
         "carts/nestest.log", 
         0xc000, 
-        8800).is_ok());
+        8991).is_ok());
     
 
 }
@@ -43,7 +43,7 @@ fn run_with_expect_log(cart_file: &str, log_file: &str, start_pc: u16, steps: us
     let norm_colors = ColorSpec::new();
 
     // init program counter (for use with test cart)
-    system.cpu.pc = Addr(0xc000);
+    system.cpu.pc = Addr(start_pc);
 
     let mut cycles = 0u64;
 
@@ -146,6 +146,9 @@ fn run_with_expect_log(cart_file: &str, log_file: &str, start_pc: u16, steps: us
         // let cpu = &mut self.cpu;
         // cpu.execute(self, op, am);
     }
+
+    assert_eq!(system.peek_byte(02), 0);
+    assert_eq!(system.peek_byte(03), 0);
 
     Ok(())
 

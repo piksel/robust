@@ -87,7 +87,7 @@ impl OpCode {
                     let old_pc = sys.cpu.pc;
                     sys.cpu.pc += addr;
                     // If the new PC is on another page, add +2 cycles
-                    if sys.cpu.pc.same_page_as(old_pc) {3} else {5}
+                    if sys.cpu.pc.same_page_as(old_pc) {3} else {4}
                 } else {2}
             }
 
@@ -170,7 +170,7 @@ impl OpCode {
 
 
             OpCode::PullAcc => {
-                let _ = sys.print_stack();
+                
                 let value = CPU::stack_pull_byte(sys);
                 sys.cpu.set_reg(&Register::A, value);
                 sys.cpu.update_flags(value);
@@ -464,6 +464,52 @@ impl OpCode {
                 sys.cpu.a &= value;
                 sys.write_byte(addr, value);
                 sys.cpu.update_flags(value);
+                2
+            }
+
+            OpCode::ShiftRightOrHack => {
+                // Lsr + Eor, M = 0 -> [76543210] -> C, A EOR M -> A
+                let addr = resolve_addr(sys, &address_mode);
+                let value_m = sys.read_byte(addr);
+                let (shifted, carry) = shift_right(value_m);
+                sys.cpu.carry = carry;
+                sys.write_byte(addr, shifted);
+
+                eprintln!("A: {:02x} {:08b}", sys.cpu.a, sys.cpu.a);
+                sys.cpu.a ^= shifted;
+
+                eprintln!("M: {value_m:02x} {value_m:08b}");
+                eprintln!("S: {shifted:02x} {shifted:08b}");
+                eprintln!("A: {:02x} {:08b}", sys.cpu.a, sys.cpu.a);
+                2
+            }
+
+            OpCode::RotRightAddHack => {
+                // Ror + Adc, M = C -> [76543210] -> C, A + M + C -> A, C
+                let addr = resolve_addr(sys, &address_mode);
+                let value_m = sys.read_byte(addr);
+                let (rhs_val, rot_carry) = rot_right(value_m, sys.cpu.carry);
+                // sys.cpu.carry = carry;
+                sys.write_byte(addr, rhs_val);
+
+                let ack_val = sys.cpu.a;
+                let carry = if rot_carry {1} else {0};
+                let sum = (ack_val as u16 + rhs_val as u16) + carry;
+
+                let overflow = sum > 0xff;
+
+                let value = sum as u8;
+
+                let ack_sign = (ack_val & 0b10000000) != 0;
+                let rhs_sign = (rhs_val & 0b10000000) != 0;
+                let org_sign = ack_sign != rhs_sign;
+
+                sys.cpu.a = value;
+                sys.cpu.update_flags(value);
+                sys.cpu.carry = overflow;
+
+                sys.cpu.overflow = if overflow {false} else {org_sign != sys.cpu.sign};
+                // TODO:
                 2
             }
 

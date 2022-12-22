@@ -30,7 +30,7 @@ impl super::System {
         }
     }
 
-    pub(crate) fn peek_byte<A: Into<Addr>>(&self, addr: A) -> u8 {
+    pub fn peek_byte<A: Into<Addr>>(&self, addr: A) -> u8 {
         let addr = addr.into();
         match self.map_addr(addr) {
             BusTarget::RAM(ra) => self.ram[ra],
