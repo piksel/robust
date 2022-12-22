@@ -1,6 +1,6 @@
 
 use image::{RgbaImage, Rgba};
-use imageproc::{drawing::{self, text_size, draw_text_mut}, rect::Rect};
+use imageproc::{drawing::{self, text_size, draw_text_mut, Canvas}, rect::Rect};
 use rusttype::{Font, Scale};
 
 use std::{path::PathBuf, fs::File, io::Write};
@@ -66,7 +66,7 @@ fn main() -> anyhow::Result<()> {
         let offset = 0x20*row;
         let text = if row == 0 {
             // Use 0..1f for special characters
-            "\x7f¥ TODO: Special Chars ❤️♥️\x7f\x7f\x7f\x7f\x7f\x7f\x7f\x7f\x7f".to_owned()
+            "\x7f¥ TODO: Special Chars ---\x1a\x1b\x1c\x1d\x1e\x1f".to_owned()
         } else {
             String::from_iter((0u8..0x20u8).map(|i| (i + offset) as char))
         };
@@ -76,23 +76,84 @@ fn main() -> anyhow::Result<()> {
             let col_even = (i & 1) == 0;
             let bg = if col_even ^ row_even {light} else {dark};
             let x = 1 + (i as i32 * char_width as i32);
+            let cox = (x - 1) as u32;
+            let coy = (y - 1) as u32;
             let rect = Rect::at(x-1, y-1).of_size(char_width, char_height as u32);
             drawing::draw_filled_rect_mut(&mut preview, rect, bg);
 
-            // let text_char = String::new()
-            let Some(text_char) = text.get(ci..(ci + c.len_utf8())) else {
-                panic!("Could not index into text using index {x}");
-            };
-            
-            for sx in -1..2 {
-                for sy in -1..2 {
-                    draw_text_mut(&mut image, white, x + sx, y + sy, scale, &font, text_char);
-                    draw_text_mut(&mut preview, white, x + sx, y + sy, scale, &font, text_char);
+            match c {
+                // Draw sprites
+                '\x1a' => {
+                    let half_h = char_height / 2;
+                    let rect = Rect::at(x - 1, (y - 1)).of_size(char_width, half_h);
+                    drawing::draw_filled_rect_mut(&mut image, rect, black);
+                    drawing::draw_filled_rect_mut(&mut preview, rect, black);
+                }
+                '\x1b' => {
+                    let half_h = char_height / 2;
+                    let rect = Rect::at(x - 1, (y - 1) + half_h as i32).of_size(char_width, half_h);
+                    drawing::draw_filled_rect_mut(&mut image, rect, black);
+                    drawing::draw_filled_rect_mut(&mut preview, rect, black);
+                }
+                '\x1c' => {
+                    // drawing::draw_filled_rect_mut(&mut image, rect, white);
+                    // drawing::draw_filled_rect_mut(&mut preview, rect, white);
+
+                    for cy in 0..char_height {
+                        if cy & 1 != 0 {continue}
+                        for cx in 0..char_width {
+                            if cx & 1 != 0 {continue}
+                            image.draw_pixel(cox + cx, coy + cy, black);
+                            preview.draw_pixel(cox + cx, coy + cy, black);
+                        }
+                    }
+                }
+                '\x1d' => {
+                    // drawing::draw_filled_rect_mut(&mut image, rect, white);
+                    // drawing::draw_filled_rect_mut(&mut preview, rect, white);
+
+                    for cy in 0..char_height {
+                        for cx in 0..char_width {
+                            if (cx & 1) ^ (cy & 1) != 0 {continue}
+                            image.draw_pixel(cox + cx, coy + cy, black);
+                            preview.draw_pixel(cox + cx, coy + cy, black);
+                        }
+                    }
+                }
+                '\x1e' => {
+                    // drawing::draw_filled_rect_mut(&mut image, rect, white);
+                    // drawing::draw_filled_rect_mut(&mut preview, rect, white);
+
+                    for cy in 0..char_height {
+                        for cx in 0..char_width {
+                            if ((cy & 1) == 0) && (cx & 1) != ((cy & 2) >> 1) {continue}
+                            image.draw_pixel(cox + cx, coy + cy, black);
+                            preview.draw_pixel(cox + cx, coy + cy, black);
+                        }
+                    }
+                }
+                '\x1f' => {
+                    drawing::draw_filled_rect_mut(&mut image, rect, black);
+                    drawing::draw_filled_rect_mut(&mut preview, rect, black);
+                }
+                _ => {
+                    // Draw character using font
+                    // let text_char = String::new()
+                    let Some(text_char) = text.get(ci..(ci + c.len_utf8())) else {
+                        panic!("Could not index into text using index {x}");
+                    };
+                    
+                    for sx in -1..2 {
+                        for sy in -1..2 {
+                            draw_text_mut(&mut image, white, x + sx, y + sy, scale, &font, text_char);
+                            draw_text_mut(&mut preview, white, x + sx, y + sy, scale, &font, text_char);
+                        }
+                    }
+
+                    draw_text_mut(&mut image, black, x, y, scale, &font, text_char);
+                    draw_text_mut(&mut preview, black, x, y, scale, &font, text_char);
                 }
             }
-
-            draw_text_mut(&mut image, black, x, y, scale, &font, text_char);
-            draw_text_mut(&mut preview, black, x, y, scale, &font, text_char);
         }
 
         

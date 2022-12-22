@@ -134,8 +134,8 @@ impl System {
                 
                 // stderr.print(&buff)?;
 
-                let actual_log = actual.to_string();
-                eprintln!("{actual_log}");
+                // let actual_log = actual.to_string();
+                // eprintln!("{actual_log}");
             // }
 
 

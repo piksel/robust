@@ -30,35 +30,55 @@ impl Font {
         }
     }
     
-    pub fn draw_text(&self, buffer: &mut Vec<u32>, x: usize, y: usize, text: &str) -> anyhow::Result<()> {
-
-
-
+    pub fn draw_text(&self, buffer: &mut Vec<u32>, x: usize, y: usize, text: &str, color: u8) -> anyhow::Result<()> {
         let mut byte_chars = [0u8; 4];
-        for (ci, c) in text.chars().enumerate() {
-            let font_offset = if c.is_ascii() {
-                c.encode_utf8(&mut byte_chars);
-                byte_chars[0]
-            } else {
-                0
-            };
+        for (li, line) in text.lines().enumerate() {
+
             
+            for (ci, c) in line.chars().enumerate() {
+                
+                let font_offset = match c {
+                    '█' => {0x1f},
+                    '▓' => {0x1e},
+                    '▒' => {0x1d},
+                    '░' => {0x1c},
+                    '▄' => {0x1b},
+                    '▀' => {0x1a},
+                    c if c.is_ascii() => {
+                        c.encode_utf8(&mut byte_chars);
+                        byte_chars[0]
+                    },
+                    _ => {
+                        c.encode_utf8(&mut byte_chars);
+                        eprintln!("Byte chars: {:?}", byte_chars);
+                        0
+                    }
+                };
 
-            let char_y = (font_offset as usize / 0x20) * CHAR_HEIGHT;
-            let char_x = (font_offset as usize % 0x20) * CHAR_WIDTH;
-            let char_x_offset = ci * CHAR_WIDTH;
+                
+                
 
-            for cy in 0..CHAR_HEIGHT {
-                for cx in 0..CHAR_WIDTH {
-                    let mono = self.bitmap[char_y + cy][char_x + cx] as u32;
-                    let by = y + cy;
-                    let bx = x + cx + char_x_offset;
+                let char_y = (font_offset as usize / 0x20) * CHAR_HEIGHT;
+                let char_x = (font_offset as usize % 0x20) * CHAR_WIDTH;
+                let char_x_offset = ci * CHAR_WIDTH;
+                let char_y_offset = li * CHAR_HEIGHT;
 
-                    let color = mono << 16 | mono << 8 | mono;
-                    let offset = (by * WIDTH) + bx;
+                for cy in 0..CHAR_HEIGHT {
+                    for cx in 0..CHAR_WIDTH {
+                        let mono = self.bitmap[char_y + cy][char_x + cx] as u32;
+                        let by = y + cy + char_y_offset;
+                        let bx = x + cx + char_x_offset;
 
-                    if mono != 0 {
-                        buffer[offset] = color;
+                        let pixel = mono << 16 | mono << 8 | mono;
+                        let offset = (by * WIDTH) + bx;
+
+                        if pixel != 0 {
+                            buffer[offset] = match color {
+                                0 => pixel,
+                                1 => 0xffffffff ^ pixel,
+                                _ => pixel,
+                            };
+                        }
                     }
                 }
             }

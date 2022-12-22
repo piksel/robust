@@ -14,13 +14,15 @@ fn main() -> Result<()> {
     let _ = args.next();
     let cart_file_path = args.next().unwrap_or("carts/nestest.nes".to_owned());
 
+    let logo_text = include_str!("../logo.ansi");
+
     let title = format!("robust - {} - Press ESC to exit", &cart_file_path);
     color_backtrace::install();
     let mut system = system::System::new();
 
     let cart_file = fs::File::open(cart_file_path)?;
 
-    let mut buffer: Vec<u32> = vec![0x00808080; WIDTH * HEIGHT];
+    let mut buffer: Vec<u32> = vec![0x00170530; WIDTH * HEIGHT];
 
     let mut window = Window::new(
         title.as_str(),
@@ -35,9 +37,13 @@ fn main() -> Result<()> {
     let font = Font::from_bytes(*include_bytes!("../../fonts/PixelOperatorMonoHB.bmf"));
 
     // Limit to max ~60 fps update rate
-    window.limit_update_rate(Some(std::time::Duration::from_micros(16600)));
+    // window.limit_update_rate(Some(std::time::Duration::from_micros(16600)));
 
-    font.draw_text(&mut buffer, 10, 10, "Loading...")?;
+    let logo_x = 0;
+    let logo_y = 128;
+    font.draw_text(&mut buffer, logo_x + 4, logo_y + 4, logo_text, 0)?;
+    font.draw_text(&mut buffer, logo_x, logo_y, logo_text, 1)?;
+    font.draw_text(&mut buffer, 10, 10, "Loading...", 1)?;
 
     window.update_with_buffer(&buffer, WIDTH, HEIGHT)?;
 
@@ -52,6 +58,11 @@ fn main() -> Result<()> {
     // let a1 = args.next();
     eprintln!("");
 
+    for _ in 0..100 {
+        window.update();
+
+    }
+
     // Limit to max ~60 fps update rate
     // window.limit_update_rate(Some(std::time::Duration::from_micros(16600)));
 
@@ -59,7 +70,7 @@ fn main() -> Result<()> {
 
     while window.is_open() && !window.is_key_down(Key::Escape) {
 
-
+        if true {
             for key in window.get_keys_pressed(KeyRepeat::No) {
                 if let Some((cid, btn)) = map_key_to_button(key) {
                     system.apu.set_controller_button(cid, btn, true);
@@ -105,15 +116,15 @@ fn main() -> Result<()> {
                 // panic!("whoa");
                 // break;
             }
-        
-        font.draw_text(&mut buffer, 10, 10, &format!("Cycle: {}", system.cycles))?;
+        }
+        font.draw_text(&mut buffer, 10, 10, &format!("Cycle: {}", system.cycles), 1)?;
 
         let now = std::time::Instant::now();
         let render_time = now - last_frame;
 
         let fps = 1.0 / render_time.as_secs_f64();
 
-        font.draw_text(&mut buffer, 10, 30, &format!("FPS: {:.2}", fps))?;
+        font.draw_text(&mut buffer, 10, 30, &format!("FPS: {:.2}", fps), 1)?;
 
         last_frame = now;
 

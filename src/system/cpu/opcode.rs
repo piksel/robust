@@ -372,7 +372,6 @@ impl OpCode {
             }
 
             OpCode::Break => {
-                panic!("BREAK!!!!");
                 CPU::stack_push_word(sys, sys.cpu.pc.into());
                 CPU::stack_push_byte(sys, sys.cpu.status());
                 
