@@ -24,6 +24,17 @@ pub struct ControllerState {
     step: u8,
 }
 
+pub enum ControllerButton {
+    Right = 1 << 0,
+    Left = 1 << 1,
+    Down = 1 << 2,
+    Up = 1 << 3,
+    Start = 1 << 4,
+    Select = 1 << 5,
+    B = 1 << 6,
+    A = 1 << 7,
+}
+
 impl ControllerState {
 
     pub fn right(&self)  -> bool { self.get(0) }
@@ -50,7 +61,15 @@ impl ControllerState {
         value
     }
 
+    pub fn set_button(&mut self, button: ControllerButton, pressed: bool) {
+        if pressed {
+            self.buttons |= button as u8
+        } else {
+            self.buttons &= 0xff ^ button as u8
+        }
+    }
     
+
     fn set(&mut self, index: u8, value: bool) {
         if value {
             self.buttons |= mask(index)
@@ -74,6 +93,14 @@ impl APU {
             polling_expansion: false,
             controller1: ControllerState{buttons: 0, step: 0},
             controller2: ControllerState{buttons: 0, step: 0},
+        }
+    }
+
+    pub fn set_controller_button(&mut self, controller: usize, button: ControllerButton, pressed: bool) {
+        match controller {
+            0 => self.controller1.set_button(button, pressed),
+            1 => self.controller2.set_button(button, pressed),
+            cid => panic!("invalid controller: {cid}")
         }
     }
 }

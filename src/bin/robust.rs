@@ -1,8 +1,8 @@
-use robust::{system, font::Font};
+use robust::{system::{self, apu::ControllerButton}, font::Font};
 
 use std::fs;
 use anyhow::Result;
-use minifb::{WindowOptions, Window, Key};
+use minifb::{WindowOptions, Window, Key, KeyRepeat};
 use std::env;
 
 const WIDTH: usize = 512;
@@ -60,7 +60,17 @@ fn main() -> Result<()> {
     while window.is_open() && !window.is_key_down(Key::Escape) {
 
 
+            for key in window.get_keys_pressed(KeyRepeat::No) {
+                if let Some((cid, btn)) = map_key_to_button(key) {
+                    system.apu.set_controller_button(cid, btn, true);
+                }
+            }
 
+            for key in window.get_keys_released() {
+                if let Some((cid, btn)) = map_key_to_button(key) {
+                    system.apu.set_controller_button(cid, btn, false);
+                }
+            }
 
 
             system.run_cycle().or_else(|e| {
@@ -107,8 +117,6 @@ fn main() -> Result<()> {
 
         last_frame = now;
 
-        // panic!("whoaaa");
-
         // We unwrap here as we want this code to exit if it fails. Real applications may want to handle this in a different way
         window
             .update_with_buffer(&buffer, WIDTH, HEIGHT)
@@ -124,4 +132,18 @@ fn main() -> Result<()> {
     eprintln!("\nDone!");
 
     Ok(())
+}
+
+fn map_key_to_button(key: Key) -> Option<(usize, ControllerButton)> {
+    match key {
+        Key::Up        => Some((0, ControllerButton::Up)),
+        Key::Down      => Some((0, ControllerButton::Down)),
+        Key::Left      => Some((0, ControllerButton::Left)),
+        Key::Right     => Some((0, ControllerButton::Right)),
+        Key::Z         => Some((0, ControllerButton::A)),
+        Key::X         => Some((0, ControllerButton::B)),
+        Key::Enter     => Some((0, ControllerButton::Start)),
+        Key::Backspace => Some((0, ControllerButton::Select)),
+        _ => None,
+    }
 }

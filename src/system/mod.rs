@@ -19,7 +19,7 @@ pub mod addr;
 pub struct System {
     pub(crate) ram: Vec<u8>,
     pub(crate) ppu: ppu::PPU,
-    pub(crate) apu: apu::APU,
+    pub apu: apu::APU,
     pub(crate) cpu: CPU,
     pub(crate) cart: Option<Cart>,
     pub cycles: u64,
