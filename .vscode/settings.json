@@ -1,5 +1,9 @@
 {
     "cSpell.words": [
+        "curr",
+        "minifb",
+        "nestest",
         "vram"
-    ]
+    ],
+    "sarif-viewer.connectToGithubCodeScanning": "off"
 }
