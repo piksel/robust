@@ -7,7 +7,7 @@ pub struct PPU {
     control: u8,
     mask: u8,
     pub status: u8,
-    oam_addr: u8,
+    pub(crate) oam_addr: u8,
     oam_data: u8,
     scroll: [u8; 2],
     addr: u16,
@@ -19,15 +19,24 @@ pub struct PPU {
     // status flags
     // sprite_0_hit: bool,
     // vblank_started: bool,
-    pub mono_frame_buffer: [[u8; 256]; 240],
+    // pub mono_frame_buffer: [[u8; 256]; 240],
+    pub frame_buffer: [[u32; 256]; 240],
 
     pub vram: [u8; 2048],
-    pub palette: [u8; 31],
+    pub palette: [u8; 32],
     pub bg_patterns: [u16; 2],
     pub bg_palettes: [u8; 2],
 }
 
 impl PPU {
+
+    pub const palette_colors: [u32; 64] = [
+        0x545454, 0x001e74, 0x081090, 0x300088, 0x440064, 0x5c0030, 0x540400, 0x3c1800, 0x202a00, 0x083a00, 0x004000, 0x003c00, 0x00323c, 0x000000, 0x000000, 0x000000,
+        0x989698, 0x084cc4, 0x3032ec, 0x5c1ee4, 0x8814b0, 0xa01464, 0x982220, 0x783c00, 0x545a00, 0x287200, 0x087c00, 0x007628, 0x006678, 0x000000, 0x000000, 0x000000,
+        0xeceeec, 0x4c9aec, 0x787cec, 0xb062ec, 0xe454ec, 0xec58b4, 0xec6a64, 0xd48820, 0xa0aa00, 0x74c400, 0x4cd020, 0x38cc6c, 0x38b4cc, 0x3c3c3c, 0x000000, 0x000000,
+        0xeceeec, 0xa8ccec, 0xbcbcec, 0xd4b2ec, 0xecaeec, 0xecaed4, 0xecb4b0, 0xe4c490, 0xccd278, 0xb4de78, 0xa8e290, 0x98e2b4, 0xa0d6e4, 0xa0a2a0, 0x000000, 0x000000,
+    ];
+
     pub fn init() -> Self {
         Self {
             control: 0,
@@ -39,11 +48,11 @@ impl PPU {
             addr: 0,
             scroll_y: false,
             addr_lsb: false,
-            scan_line: 0,
+            scan_line: 21,
             scan_row: 0,
-            mono_frame_buffer: [[0; 256]; 240],
+            frame_buffer: [[0u32; 256]; 240],
             vram: [0; 2048],
-            palette: [0; 31],
+            palette: [0; 32],
             bg_patterns: [0; 2],
             bg_palettes: [0; 2],
         }
@@ -67,12 +76,16 @@ impl PPU {
         }
     }
 
+    // pub fn get_pixel(&self, x: usize, y: usize) -> u32 {
+    //     Self::palette_colors[self.mono_frame_buffer[y][x] as usize]
+    // }
+
 }
 
 pub(crate) fn tick(sys: &mut System) {
 
     // increase the scan pos
-    if sys.ppu.scan_line >= 341 {
+    if sys.ppu.scan_line >= 340 {
         sys.ppu.scan_line = 0;
         sys.ppu.scan_row += 1;
         if sys.ppu.scan_row > 261 {
@@ -97,6 +110,10 @@ pub(crate) fn tick(sys: &mut System) {
         if row == POST_RENDER_LINE + 1{
             // set vblank
             sys.ppu.status |= 0b1000_0000;
+
+            if sys.ppu.control & 0b1000_0000 != 0 {
+                sys.trigger_nmi()
+            }
         }
     }
 
@@ -106,8 +123,8 @@ pub(crate) fn tick(sys: &mut System) {
         if col >= 4 && col < 260 {
             let nm_base = (sys.ppu.nametable_address() - 0x2000) as usize;
             let at_base = nm_base + 0x360  as usize;
-            let [scroll_x, scroll_y] = [0, 0];//sys.ppu.scroll;
-            let y = (row + scroll_y as u16) as usize;
+            let [scroll_x, scroll_y] = sys.ppu.scroll;
+            let y = (row as u16 + scroll_y as u16) as usize;
             let x = ((col - 4) + scroll_x as u16) as usize;
 
             let nm_y = (y / 8) * 32;
@@ -133,15 +150,27 @@ pub(crate) fn tick(sys: &mut System) {
 
 
             let cart = sys.cart.as_ref().unwrap();
-            let upper_sliver = cart.chr_rom[upper_addr as usize];
-            let lower_sliver = cart.chr_rom[lower_addr as usize];
+            let upper_sliver = cart.read_chr_byte(upper_addr);// .chr_rom[upper_addr as usize];
+            let lower_sliver = cart.read_chr_byte(lower_addr);// as usize];
 
             let mask = 0b1000_0000u8 >> (x % 8);
-            let color = if (upper_sliver & mask) != 0 {128u8} else {0u8}
+            let color_index = (
+                if lower_sliver & mask != 0 {1 << 0} else {0} |
+                if upper_sliver & mask != 0 {1 << 1} else {0} |
+                cbits << 2
+            );
+
+            // if (color_index != 0) {
+            //     eprintln!("Color index: {color_index} {color_index:02x} {color_index:04b}");
+            //     let pal_col = sys.ppu.palette[color_index as usize];
+            //     panic!("PalCol: {pal_col} {pal_col:02x} {pal_col:04b}");
+            // }
+            /*
+                if (upper_sliver & mask) != 0 {128u8} else {0u8}
                 + if (lower_sliver & mask) != 0 {64} else {0}
                 + if (cbits & 0x1) != 0 {32} else {0}
                 + if (cbits & 0x2) != 0 {16} else {0};
-
+            */
             
 
             if tile_index == 0x2d && mask == 1 {
@@ -160,11 +189,22 @@ pub(crate) fn tick(sys: &mut System) {
             }
 
 
-            sys.ppu.mono_frame_buffer[y][x] = color;
+            sys.ppu.frame_buffer[y][x] = PPU::palette_colors[sys.ppu.palette[color_index as usize] as usize];
+
+            // eprint!("")
 
 
 
             // TODO: Sprites!
+            for i in 0..64 {
+                let y_pos = sys.oam[i + 0];
+                let x_pos = sys.oam[i + 3];
+                if y_pos == (row as u8) {
+                    // Sprite zero hit!
+                    sys.ppu.status |= 0b0100_0000;
+                }
+
+            }
 
         } else if col > 260 {
             // eprintln!();
@@ -185,12 +225,17 @@ pub(crate) fn write(sys: &mut System, address: u8, value: u8) {
         // 2 => {
         //     sys.ppu.status = value;
         // }
-        // 3 => {
-        //     sys.ppu.oam_addr = value;
-        // }
-        // 4 => {
-        //     sys.ppu.oam_data = value;
-        // }
+        3 => {
+            sys.ppu.oam_addr = value;
+            // eprintln!("Wrote OAM Addr: {value:04x}");
+        }
+        4 => {
+            sys.oam[sys.ppu.oam_addr as usize] = value;
+            eprintln!("Wrote OAM Data: {value:04x}");
+            // sys.ppu.oam_data = value;
+            // panic!()
+            let _ = sys.ppu.oam_addr.wrapping_add(1);
+        }
         5 => {
             if sys.ppu.scroll_y {
                 sys.ppu.scroll[1] = value;
@@ -223,7 +268,7 @@ pub(crate) fn write(sys: &mut System, address: u8, value: u8) {
             } else if sys.ppu.addr < 0x3f00 {
                 panic!("tried to write {value:02x} to PPU address {:04x}", sys.ppu.addr);
             } else if sys.ppu.addr < 0x3fff {
-                let addr = (sys.ppu.addr - 0x3f00) % 0x1f;
+                let addr = (sys.ppu.addr - 0x3f00) % 0x20;
                 sys.ppu.palette[addr as usize] = value;
             } else {
                 panic!("tried to write {value:02x} to PPU address {:04x}", sys.ppu.addr);
@@ -273,8 +318,8 @@ pub(crate) fn read(sys: &mut System, address: u8) -> u8 {
 
             value
         }
-        3 => sys.ppu.oam_addr,
-        4 => sys.ppu.oam_data,
+        3 => panic!("tried to read from OAM ADDR"),
+        4 => panic!("tried to read from OAM DATA"),
         5 => panic!("tried to read from PPU SCROLL"), //sys.ppu.scroll,
         6 => panic!("tried to read from PPU ADDRESS"), //sys.ppu.addr,
         7 => panic!("tried to read from PPU DATA"), //sys.ppu.addr,sys.ppu.data,

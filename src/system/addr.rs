@@ -1,4 +1,4 @@
-use std::{ops::{Add, AddAssign, Sub, Deref}, fmt::{Display, UpperHex, UpperExp}};
+use std::{ops::{Add, AddAssign, Sub, Deref}, fmt::{Display, UpperHex}};
 
 #[derive(Copy, Clone, PartialEq, Eq)]
 pub struct Addr(pub u16);
@@ -97,5 +97,17 @@ impl Deref for Addr {
 
     fn deref(&self) -> &Self::Target {
         &self.0
+    }
+}
+
+impl PartialEq<u16> for Addr {
+    fn eq(&self, other: &u16) -> bool {
+        self.0 == *other
+    }
+}
+
+impl PartialOrd<u16> for Addr {
+    fn partial_cmp(&self, other: &u16) -> Option<std::cmp::Ordering> {
+        self.0.partial_cmp(other)
     }
 }

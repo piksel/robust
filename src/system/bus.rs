@@ -27,6 +27,7 @@ impl super::System {
                     Some(cart) => cart.read_prg_byte(addr.0 as usize)
                 }
             },
+            BusTarget::OAMDMA => panic!("tried to read from OAM DMA"),
         }
     }
 
@@ -42,6 +43,7 @@ impl super::System {
                     Some(cart) => cart.read_prg_byte(addr.0 as usize)
                 }
             },
+            BusTarget::OAMDMA => panic!("tried to read from OAM DMA"),
         }
     }
 
@@ -52,12 +54,24 @@ impl super::System {
             BusTarget::PPU(ra) => ppu::write(self, ra as u8, value),
             BusTarget::APU(ra) => apu::write(self, ra as u8, value),
             BusTarget::PRG => {
-                match &self.cart {
+                match &mut self.cart {
                     None => panic!("tried to read from cart when not loaded"),
-                    Some(_cart) => eprintln!("tried to write to 0x{value:02x} to cart ({addr}) which is not implemented")
+                    Some(cart) => cart.write_byte(addr, value), 
                     // Some(_cart) => panic!("writing to cart is not implemented (tried writing {value:02x} to {addr:04x})")
                 }
             },
+            BusTarget::OAMDMA => {
+                println!("Writing to OAM using DMA on bank {value:02x}");
+                assert_eq!(self.ppu.oam_addr, 0);
+                for lsb in 0..255 {
+                    self.oam[lsb] = self.read_byte(Addr::from_bytes(value, lsb as u8));
+                }
+
+                // self.dump_oam();
+
+                //513 or 514 cycles after the $4014 write tick. (1 wait state cycle while waiting for writes to complete, +1 if on an odd CPU cycle, then 256 alternating read/write cycles.)
+                self.cycles += 513;
+            }
         }
     }
 
@@ -109,6 +123,8 @@ impl super::System {
         } else if addr.0 <= 0x3fff {
             // $2008-$3FFF	$1FF8	Mirrors of $2000-2007 (repeats every 8 bytes)
             BusTarget::PPU( ((addr.0 - 0x2000) % 8) as usize )
+        } else if addr.0 == 0x4014 {
+            BusTarget::OAMDMA
         } else if addr.0 <= 0x4017 {
             // $4000-$4017	$0018	NES APU and I/O registers
             BusTarget::APU((addr.0 - 0x4000) as usize )
@@ -126,5 +142,6 @@ pub enum BusTarget {
     RAM(usize),
     PPU(usize),
     APU(usize),
-    PRG
+    PRG,
+    OAMDMA,
 }

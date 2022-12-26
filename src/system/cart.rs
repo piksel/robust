@@ -1,6 +1,10 @@
 
 
+use core::panic;
+
 use anyhow::{Result, format_err, bail};
+
+use super::addr::Addr;
 
 #[allow(dead_code)]
 const HEADER_SIZE: usize = 16;
@@ -15,6 +19,8 @@ pub(crate) struct Cart {
     prg_ram: Vec<u8>,
     #[allow(dead_code)]
     pub(crate) chr_rom: Vec<u8>,
+    pub(crate) chr_ram: Vec<u8>,
+    chr_bank: u8,
 }
 
 impl Cart {
@@ -26,11 +32,13 @@ impl Cart {
 
         let prg_rom = head.by_ref().take(header.prg_rom_size).collect::<IOResult<Vec<u8>>>()?;
         let chr_rom = head.by_ref().take(header.chr_rom_size).collect::<IOResult<Vec<u8>>>()?;
+        let chr_ram = vec![0u8; 8192];
 
         let prg_ram_size = match header.mapper {
             // 0 => 4096,
             0 => 0x2000,
             1 => 0,
+            2 => 0,
             mapper => panic!("mapper {mapper} is not implemented")
         };
         let prg_ram = vec![0; prg_ram_size];
@@ -39,7 +47,9 @@ impl Cart {
             header,
             prg_rom,
             chr_rom,
+            chr_ram,
             prg_ram,
+            chr_bank: 0,
         })
     }
 
@@ -54,8 +64,59 @@ impl Cart {
                     self.prg_rom[(addr - 0x8000) % self.header.prg_rom_size]
                 }
             }
+            2 => {
+                
+                if addr < 0x6000 {
+                    panic!("read outside pgm range: {addr}")
+                } else if addr < 0x8000 {
+                    panic!("read outside pgm range: {addr}")
+                    // self.prg_ram[addr - 0x6000]
+                } else if addr < 0xc000 {
+                    // switchable bank
+                    let bank_offset = self.chr_bank as usize * 0x4000;
+                    let rom_addr = bank_offset + (addr - 0x8000);
+                    let rom_addr2 = rom_addr % self.header.prg_rom_size;
+                    // println!("Reading from {addr:08x} => bank offset {last_bank:04x} => {rom_addr:04x} => {rom_addr2:04x}");
+                    self.prg_rom[rom_addr % self.header.prg_rom_size]
+                } else {
+                    // static last bank
+                    
+                    let last_bank = self.header.prg_rom_size - 0x4000;
+                    let rom_addr = last_bank + (addr - 0xc000);
+                    let rom_addr2 = rom_addr % self.header.prg_rom_size;
+                    // println!("Reading from {addr:08x} => bank offset {last_bank:04x} => {rom_addr:04x} => {rom_addr2:04x}");
+                    self.prg_rom[rom_addr % self.header.prg_rom_size]
+                }
+            }
             mapper => panic!("reading is not implemented for mapper {mapper}")
         }
+    }
+
+    pub fn read_chr_byte(&self, addr: u16) -> u8 {
+        match self.header.mapper {
+            0 | 1 => {
+                self.chr_rom[addr as usize]
+            }
+            2 => {
+                self.chr_ram[addr as usize]
+            }
+            mapper => panic!("reading is not implemented for mapper {mapper}")
+        }
+    }
+
+    pub(crate) fn write_byte(&mut self, addr: Addr, value: u8) {
+        match self.header.mapper {
+            2 => {
+                if addr > 0x8000 {
+                    let banks = (self.header.prg_rom_size / 0x4000) as u8;
+                    assert!(value < banks);
+                    eprintln!("CHR switched to bank {value:02x} ({value:08b})");
+                    self.chr_bank = value;
+                }
+            }
+            m =>  eprintln!("tried to write to 0x{value:02x} to cart ({addr}) which is not implemented for mapper {m}")
+        }
+       
     }
 }
 
@@ -135,6 +196,10 @@ impl Header {
 
             let prg_rom_size = (prg_rom_size_raw as usize) * 16384;
             let chr_rom_size = (chr_rom_size_raw as usize) * 8192;
+
+            eprintln!("PRG_ROM: {prg_rom_size} byte(s) ({prg_rom_size:08x})");
+            eprintln!("CHR_ROM: {chr_rom_size} byte(s) ({chr_rom_size:08x})");
+
 
             #[allow(unused_variables)]
             {

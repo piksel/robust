@@ -61,6 +61,7 @@ pub(crate) enum OpCode {
 impl OpCode {
     pub fn execute(&self, sys: &mut System, address_mode: &AddressMode) -> u64 {
 
+        let cycles_start = sys.cycles;
         // sys.cpu.pc += 1i8;
 
         let cycles = match self {
@@ -517,7 +518,7 @@ impl OpCode {
         };
 
         sys.cycles += cycles;
-        cycles
+        sys.cycles - cycles_start
     }
 }
 

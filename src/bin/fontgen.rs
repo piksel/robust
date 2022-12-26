@@ -2,18 +2,14 @@
 use image::{RgbaImage, Rgba};
 use imageproc::{drawing::{self, text_size, draw_text_mut, Canvas}, rect::Rect};
 use rusttype::{Font, Scale};
-
-use std::{path::PathBuf, fs::File, io::Write};
+use robust::clapx::ensure_existing_file;
+use std::{path::PathBuf};
 use std::fs;
 
-use clap::{Parser, builder::{ValueParser, PathBufValueParser, TypedValueParser}, value_parser};
+use clap::{Parser, builder::{PathBufValueParser, TypedValueParser}};
 
 
-fn ensure_existing_file(p: PathBuf) -> anyhow::Result<PathBuf> {
-    if !p.exists() {anyhow::bail!("Path does not exist")} else
-    if !p.is_file() {anyhow::bail!("Path is not a file")} else
-    {Ok(p)}
-}
+
 
 #[derive(Parser)]
 struct Args {
@@ -85,7 +81,7 @@ fn main() -> anyhow::Result<()> {
                 // Draw sprites
                 '\x1a' => {
                     let half_h = char_height / 2;
-                    let rect = Rect::at(x - 1, (y - 1)).of_size(char_width, half_h);
+                    let rect = Rect::at(x - 1, y - 1).of_size(char_width, half_h);
                     drawing::draw_filled_rect_mut(&mut image, rect, black);
                     drawing::draw_filled_rect_mut(&mut preview, rect, black);
                 }

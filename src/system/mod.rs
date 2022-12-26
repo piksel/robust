@@ -1,6 +1,6 @@
 use std::{io::{self, Read, Write as IOWrite}, fs};
 
-use self::{cpu::{CPU}, execution_state::ExecutionState};
+use self::{cpu::{CPU}, execution_state::ExecutionState, addr::Addr, options::Options};
 
 use self::cart::Cart;
 use anyhow::{Result, Ok};
@@ -15,6 +15,7 @@ pub mod execution_state;
 pub mod apu;
 pub mod ppu;
 pub mod addr;
+pub mod options;
 
 pub struct System {
     pub(crate) ram: Vec<u8>,
@@ -23,10 +24,13 @@ pub struct System {
     pub(crate) cpu: CPU,
     pub(crate) cart: Option<Cart>,
     pub cycles: u64,
+    pub(crate) oam: [u8; 256],
+    pub opts: Options,
+    pub(crate) nmi: bool,
 }
 
 impl System {
-    pub fn new() -> Self {
+    pub fn new(opts: Options) -> Self {
         let cpu = CPU::init();
         
         System {
@@ -36,11 +40,18 @@ impl System {
             cpu,
             cart: None,
             cycles: 7,
+            oam: [0u8; 256],
+            opts,
+            nmi: false,
         }
     }
 
-    pub fn get_frame(&self) -> [[u8; 256]; 240] {
-        self.ppu.mono_frame_buffer
+    pub fn has_cartridge(&self) -> bool {
+        self.cart.is_some()
+    }
+
+    pub fn get_frame(&self) -> [[u32; 256]; 240] {
+        self.ppu.frame_buffer
     }
 
     pub fn dump_palette(&self) {
@@ -53,6 +64,14 @@ impl System {
 
     pub fn dump_zero_page(&self) {
         dump_mem(self.ram.iter().take(0xff), None).expect("failed to dump vram");
+    }
+
+    pub fn dump_oam(&self) {
+        dump_mem(&self.oam, Some(Addr::from_zero(self.ppu.oam_addr))).expect("failed to dump oam");
+    }
+
+    fn dump_stack(&self) {
+        dump_mem(self.ram.iter().skip(CPU::STACK_BOT.0 as usize).take(0xff), Some(Addr::from_zero(self.cpu.sp))).expect("failed to dump stack");
     }
 
     pub fn load_cart(&mut self, cart_file: &fs::File) -> Result<()> {
@@ -88,6 +107,7 @@ impl System {
         // Read reset vector
         let rv = self.read_addr(0xfffc);
         self.cpu.pc = rv;
+        eprintln!("Resetting to {}", self.cpu.pc);
     }
 
     pub fn run_cycle(&mut self) -> Result<ExecutionState> {
@@ -109,25 +129,19 @@ impl System {
 
         // loop {
 
-        let mut nmi_handled = false;
         loop {
 
-            if self.ppu.status & 0b1000_0000 != 0 {
-                if !nmi_handled {
-                    CPU::stack_push_word(self, self.cpu.pc.into());
-                    CPU::stack_push_byte(self, self.cpu.status());
+            if self.nmi {
+                    // panic!("First NMI at {}", self.cycles);
+                CPU::stack_push_word(self, self.cpu.pc.into());
+                CPU::stack_push_byte(self, self.cpu.status());
 
-                    let nmi_handler_addr = self.read_addr(0xfffa);
-                    self.cpu.pc = nmi_handler_addr;
+                let nmi_handler_addr = self.read_addr(0xfffa);
+                self.cpu.pc = nmi_handler_addr;
 
-                    // eprintln!("NMI! => {nmi_handler_addr}");
-                    
-                    nmi_handled = true;
-                    
-                }
-
-            } else {
-                nmi_handled = false;
+                eprintln!("NMI! => {nmi_handler_addr}");
+                
+                self.nmi = false;
             }
 
 
@@ -142,31 +156,13 @@ impl System {
                     pc_bytes, 
                     am: am.clone(), 
                     cycles: self.cycles,
-                    ppu: (0, 0)
+                    ppu: (self.ppu.scan_row, self.ppu.scan_line)
             };
     
-            // if self.ppu.scan_row > 240 {
-
-                // let mut buff = stderr.buffer();
-                // buff.set_color(&good_colors)?;
-                // eprint!(&mut buff, "OK ")?;
-                // buff.set_color(&norm_colors)?;
-                
-                // stderr.print(&buff)?;
-
+            if self.opts.dump_ops {
                 // let actual_log = actual.to_string();
-                // eprintln!("{actual_log}");
-            // }
-
-
-            if actual.cycles > 30 {
-               // panic!("byeee");
+                eprintln!("{actual}");
             }
-
-            if actual.cpu.pc == addr::Addr(0xc291) {
-                // panic!("Reached deadlock!");
-            }
-      
 
             let cpu_cycles = op.execute(self, &am);
             let ppu_cycles = cpu_cycles * 3;
@@ -177,7 +173,7 @@ impl System {
                 ppu::tick(self);
             }
 
-            if scan_row_before != 0 && self.ppu.scan_row == 0 {
+            if scan_row_before < 241 && self.ppu.scan_row >= 241 {
                 // We have a new frame to draw!
                 return Ok(actual);
             }
@@ -230,6 +226,12 @@ impl System {
         }
         Ok(())
     }
+
+    fn trigger_nmi(&mut self) {
+        self.nmi = true;
+    }
+
+
 
 
 

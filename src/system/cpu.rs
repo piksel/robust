@@ -31,7 +31,7 @@ impl CPU {
     pub fn init() -> Self {
         CPU {
             pc: Addr(0),
-            sp: (CPU::STACK_TOP - CPU::STACK_BOT - 2u16).lsb(),
+            sp: ((CPU::STACK_TOP - CPU::STACK_BOT) - 2u16).lsb(),
             x: 0,
             y: 0,
             a: 0,
@@ -73,17 +73,28 @@ impl CPU {
     }
 
     pub fn stack_push_word(sys: &mut System, value: u16) {
-        sys.cpu.sp = sys.cpu.sp.checked_sub(1).expect("stack overflow!");
+        eprintln!("Pushing word {value:04x} to stack at {:02x}", sys.cpu.sp);
+        sys.cpu.sp = sys.cpu.sp.checked_sub(1).or_else(|| {
+            let _ = sys.dump_stack();
+            None
+        }).expect("stack overflow!");
         let addr = CPU::addr_stack(sys.cpu.sp);
         sys.write_word(addr, value);
-        sys.cpu.sp = sys.cpu.sp.checked_sub(1).expect("stack overflow!");
+        sys.cpu.sp = sys.cpu.sp.checked_sub(1).or_else(|| {
+            let _ = sys.dump_stack();
+            None
+        }).expect("stack overflow!");
         // println!("{value:04x} written to stack at {addr:04x}");
     }
 
     pub fn stack_push_byte(sys: &mut System, value: u8) {
+        eprintln!("Pushing byte {value:02x} to stack at {:02x}", sys.cpu.sp);
         let addr = CPU::addr_stack(sys.cpu.sp);
         sys.write_byte(addr, value);
-        sys.cpu.sp = sys.cpu.sp.checked_sub(1).expect("stack overflow!");
+        sys.cpu.sp = sys.cpu.sp.checked_sub(1).or_else(|| {
+            let _ = sys.dump_stack();
+            None
+        }).expect("stack overflow!");
     }
 
     fn stack_pull_word(sys: &mut System) -> u16 {
@@ -105,7 +116,7 @@ impl CPU {
         value
     }
 
-    const STACK_BOT: Addr = Addr(0x0100);
+    pub const STACK_BOT: Addr = Addr(0x0100);
     const STACK_TOP: Addr = Addr(0x01ff);
     const ADDR_BREAK: Addr = Addr(0xfffe);
 

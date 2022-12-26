@@ -1,8 +1,11 @@
 {
     "cSpell.words": [
+        "clapx",
         "curr",
         "minifb",
         "nestest",
+        "OAMDMA",
+        "regs",
         "vram"
     ],
     "sarif-viewer.connectToGithubCodeScanning": "off"

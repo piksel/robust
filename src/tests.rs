@@ -4,7 +4,7 @@ use std::{fs, io::{self, Write as IOWrite, BufRead}, fmt::{self, Write}};
 
 type ParseIntResult<T> = std::result::Result<T, std::num::ParseIntError>;
 
-use crate::system::{self, cpu, execution_state::ExecutionState, addr::Addr};
+use crate::system::{self, cpu, execution_state::ExecutionState, addr::Addr, ppu, options::Options};
 
 #[test]
 fn matches_nestest() {
@@ -18,7 +18,9 @@ fn matches_nestest() {
 }
 
 fn run_with_expect_log(cart_file: &str, log_file: &str, start_pc: u16, steps: usize) -> Result<()> {
-    let mut system = system::System::new();
+    let mut system = system::System::new(Options{
+       ..Default::default()
+    });
 
     let cart_file = fs::File::open(cart_file)?;
     let log_file = fs::File::open(log_file)?;
@@ -76,7 +78,7 @@ fn run_with_expect_log(cart_file: &str, log_file: &str, start_pc: u16, steps: us
                 pc_bytes, 
                 am: am.clone(), 
                 cycles: system.cycles,
-                ppu: (0, 0)
+                ppu: (system.ppu.scan_row, system.ppu.scan_line)
         };
 
         let actual_log = actual.to_string();
@@ -142,7 +144,17 @@ fn run_with_expect_log(cart_file: &str, log_file: &str, start_pc: u16, steps: us
         }
         
 
-        op.execute(&mut system, &am);
+        let cpu_cycles = op.execute(&mut system, &am);
+        let ppu_cycles = cpu_cycles * 3;
+        // println!("CPU: {cpu_cycles} => PPU: {ppu_cycles}");
+
+        for i in 0..ppu_cycles {
+            ppu::tick(&mut system);
+            eprint!(" [{i}] {}, {}", system.ppu.scan_line, system.ppu.scan_row);
+        }
+
+        eprintln!();
+
         // let cpu = &mut self.cpu;
         // cpu.execute(self, op, am);
     }
@@ -160,6 +172,7 @@ fn compare_states(expected: ExecutionState, actual: ExecutionState) -> Result<()
     if expected.cpu.x  != actual.cpu.x   { bail!("X register desync")};
     if expected.cpu.y  != actual.cpu.y   { bail!("Y register desync")};
     if expected.cpu.pc != actual.cpu.pc  { bail!("Program Counter desync")};
+    if expected.ppu != actual.ppu  { bail!("PPU desync")};
     if expected.cpu.status() != actual.cpu.status() {bail!("CPU status flags desync")};
     if expected.am != actual.am {bail!("Address Mode desync")};
     return Ok(())
