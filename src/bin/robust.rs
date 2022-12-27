@@ -223,6 +223,7 @@ fn main() -> Result<()> {
     
     // eprintln!("\nVRAM:"); system::dump_mem(system.ppu.vram, None)?;
     eprintln!("\nPalette:"); system.dump_palette();   
+    eprintln!("\nOAM:"); system.dump_oam();   
     // eprintln!("\nZero Page:"); system.dump_zero_page();
 
     eprintln!("\nDone!");

@@ -139,7 +139,8 @@ pub(crate) fn tick(sys: &mut System) -> anyhow::Result<()> {
             let at_base = nm_base + 0x3c0  as usize;
             let [scroll_x, scroll_y] = sys.ppu.scroll;
             let y = (row as u16 + scroll_y as u16) as usize;
-            let x = ((col - 4) + scroll_x as u16) as usize;
+            let nx = (col - 4) as usize;
+            let x = (nx + scroll_x as usize) as usize;
 
             let enable_mask = if x <= 8 {sys.ppu.mask << 2} else {sys.ppu.mask};
             let enable_bg = enable_mask & 0b0000_1000 != 0;
@@ -147,12 +148,12 @@ pub(crate) fn tick(sys: &mut System) -> anyhow::Result<()> {
 
             let nm_y = (y / 8) * 32;
             let nm_x = x / 8;
-            let nm_addr = (nm_base + nm_y + nm_x) as usize;
-            let at_addr = (at_base + (8*(y/32)) + (x/32)) as usize;
+            let nm_addr = (nm_base + nm_y + nm_x) as u16;
+            let at_addr = (at_base + (8*(y/32)) + (x/32)) as u16;
 
             // eprintln!("{nm_y} ({y}) x {nm_x} ({x}) => {nm_addr}");
-            let tile_index = sys.ppu.vram[nm_addr];
-            let attributes = sys.ppu.vram[at_addr];
+            let tile_index = sys.ppu.vram[mirrored_addr(sys, nm_addr) as usize];
+            let attributes = sys.ppu.vram[mirrored_addr(sys, at_addr) as usize];
 
             let cbits = match ((x / 16) % 2, (y / 16) % 2) {
                 (0,0) => attributes & 0x3, // topleft
@@ -162,7 +163,8 @@ pub(crate) fn tick(sys: &mut System) -> anyhow::Result<()> {
                 (y,x) => panic!("invalid attribute pos {x},{y}"),
             };
 
-            let base_addr = (tile_index as u16) << 4;
+            let ctrl = sys.ppu.control;
+            let base_addr = ((tile_index as u16) << 4) + if ctrl&0b1_0000!=0{0x1000}else{0};
             let cart = sys.cart.as_ref().unwrap();
             let (upper_sliver, lower_sliver) = cart.get_tile(base_addr + ((y as u16) % 8))?;
 
@@ -214,26 +216,33 @@ pub(crate) fn tick(sys: &mut System) -> anyhow::Result<()> {
             }
 
             if enable_bg {
-                sys.ppu.frame_buffer[y][x] = PPU::palette_colors[sys.ppu.palette[color_index as usize] as usize];
+                let pal_index = sys.ppu.palette[color_index as usize] % 64;
+                sys.ppu.frame_buffer[y][nx] = PPU::palette_colors[pal_index as usize];
             }
 
             // eprint!("")
 
             // TODO: Sprites!
             for i in 0..64 {
-                let y_pos = sys.oam[i + 0] as usize;
-                let tile_index = sys.oam[i + 1];
-                let attrs = sys.oam[i + 2];
-                let x_pos = sys.oam[i + 3] as usize;
-                if y >= y_pos && y < (y_pos+8) && x >= x_pos && x < (x_pos+8) {
-                    let base_addr = (tile_index as u16) << 4;
-                    let (upper_sliver, lower_sliver) = cart.get_tile(base_addr + ((y as u16) % 8))?;
-
+                let sprite_base = i * 4;
+                let y_pos = sys.oam[sprite_base + 0] as usize;
+                let tile_index = sys.oam[sprite_base + 1];
+                let attrs = sys.oam[sprite_base + 2];
+                let x_pos = sys.oam[sprite_base + 3] as usize;
+                if y >= y_pos && y < (y_pos+8) && nx >= x_pos && nx < (x_pos+8) {
+                    let base_addr = (tile_index as u16) << 4 + if ctrl&0b1000!=0{0x1000}else{0};
                     let cbits = attrs & 0b0000_0011;
                     let flip_h = attrs & 0b0100_0000 != 0;
                     let flip_v = attrs & 0b1000_0000 != 0;
+
+                    let nsy = y - y_pos as usize;
+                    let nsx = nx - x_pos as usize;
+                    let tile_y = if flip_v {8 - ((nsy as u16) % 8)} else {(nsy as u16) % 8};
+                    let (upper_sliver, lower_sliver) = cart.get_tile(base_addr + tile_y)?;
+
+             
                     
-                    let mask = if flip_h {0b1u8 << (x % 8)} else {0b1000_0000u8 >> (x % 8)};
+                    let mask = if flip_h {0b1u8 << (nsx % 8)} else {0b1000_0000u8 >> (nsx % 8)};
                     let color_index = (
                         if lower_sliver & mask != 0 {1 << 0} else {0} |
                         if upper_sliver & mask != 0 {1 << 1} else {0} |
@@ -241,11 +250,15 @@ pub(crate) fn tick(sys: &mut System) -> anyhow::Result<()> {
                     );
 
                     let behind =   attrs & 0b0010_0000 != 0;
-
-
-                    if enable_fg && !behind {
-                        // sys.ppu.frame_buffer[y][x] = 0xff00ff;// PPU::palette_colors[sys.ppu.palette[color_index as usize] as usize];
-                        sys.ppu.frame_buffer[y][x] = PPU::palette_colors[sys.ppu.palette[color_index as usize] as usize];
+                    
+                    if enable_fg /* && !behind */ {
+                        // eprint!("{i:02x} ");
+                        sys.ppu.frame_buffer[y][nx] = if color_index == 0 {
+                            sys.ppu.frame_buffer[y][nx]
+                        } else {
+                            PPU::palette_colors[sys.ppu.palette[color_index as usize] as usize]
+                        };
+                        // sys.ppu.frame_buffer[y][x] = PPU::palette_colors[sys.ppu.palette[color_index as usize] as usize];
                     }
                     
                     if i == 0 && cbits != 00 && enable_bg && enable_fg {
@@ -330,7 +343,11 @@ pub(crate) fn write(sys: &mut System, address: u8, value: u8) {
             } else if sys.ppu.addr < 0x3f00 {
                 panic!("tried to write {value:02x} to PPU address {:04x}", sys.ppu.addr);
             } else if sys.ppu.addr < 0x3fff {
-                let addr = (sys.ppu.addr - 0x3f00) % 0x20;
+                let mut addr = (sys.ppu.addr - 0x3f00) % 0x20;
+                if addr % 4 == 0 {
+                    addr &= 0x0f
+                }
+                eprintln!("Wrote palette entry {value:02x} to {:04x}", addr);
                 sys.ppu.palette[addr as usize] = value;
             } else {
                 panic!("tried to write {value:02x} to PPU address {:04x}", sys.ppu.addr);

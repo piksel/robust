@@ -124,7 +124,7 @@ pub fn read(sys: &mut System, addr: u8) -> u8 {
 pub(crate) fn write(sys: &mut System, addr: u8, value: u8) {
     match addr {
         0x16 => {
-            eprintln!("POLLING CONTROLLER! {:08b} {:08b}", value, sys.apu.controller1.buttons);
+            // eprintln!("POLLING CONTROLLER! {:08b} {:08b}", value, sys.apu.controller1.buttons);
             sys.apu.polling_controller = (value & 1) != 0;
             sys.apu.polling_expansion = (value & 2) != 0;
 
