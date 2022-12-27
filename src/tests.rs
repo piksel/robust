@@ -68,7 +68,7 @@ fn run_with_expect_log(cart_file: &str, log_file: &str, start_pc: u16, steps: us
         
 
         let cpu = system.cpu.clone();
-        let (op, am, bc) = cpu::load(&mut system);
+        let (op, am) = cpu::load(&mut system)?;
 
         let byte_count = am.bytes() + 1;
         let pc_bytes = (0..byte_count).map(|i| system.peek_byte(cpu.pc + (i as i8))).collect();

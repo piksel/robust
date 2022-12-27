@@ -55,9 +55,15 @@ impl ControllerState {
     pub fn set_b(&mut self, v: bool)      { self.set(1, v) }
     pub fn set_a(&mut self, v: bool)      { self.set(0, v) }
     
-    pub fn poll(&mut self) -> bool {
+    pub fn poll(&mut self, strobe: bool) -> bool {
+        
+        if !strobe && self.step == 8 {
+            return false;
+        }
+
+        
         let value = self.get(self.step);
-        self.step = if self.step == 7 {0} else {self.step + 1};
+        self.step = if strobe {0} else {self.step + 1};
         value
     }
 
@@ -108,8 +114,8 @@ impl APU {
 pub fn read(sys: &mut System, addr: u8) -> u8 {
     // eprintln!("Read from APU ${:02x}", addr);
     match addr {
-        0x16 => if sys.apu.controller1.poll() {0} else {1},
-        0x17 => if sys.apu.controller2.poll() {0} else {1},
+        0x16 => if sys.apu.controller1.poll(sys.apu.polling_controller) {0x41} else {0x40},
+        0x17 => if sys.apu.controller2.poll(sys.apu.polling_controller) {0x41} else {0x40},
 
         _ => sys.apu.mem[addr as usize],
     }
@@ -118,9 +124,14 @@ pub fn read(sys: &mut System, addr: u8) -> u8 {
 pub(crate) fn write(sys: &mut System, addr: u8, value: u8) {
     match addr {
         0x16 => {
-            //eprintln!("POLLING CONTROLLER! {:08b}", value);
+            eprintln!("POLLING CONTROLLER! {:08b} {:08b}", value, sys.apu.controller1.buttons);
             sys.apu.polling_controller = (value & 1) != 0;
             sys.apu.polling_expansion = (value & 2) != 0;
+
+            if sys.apu.polling_controller {
+                sys.apu.controller1.step = 0;
+                sys.apu.controller2.step = 0;
+            }
         }
         _ => sys.apu.mem[addr as usize] = value
     }

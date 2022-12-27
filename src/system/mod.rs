@@ -157,7 +157,7 @@ impl System {
 
 
             let cpu = self.cpu.clone();
-            let (op, am, bc) = cpu::load(self);
+            let (op, am) = cpu::load(self)?;
 
             let byte_count = am.bytes() + 1;
             let pc_bytes = (0..byte_count).map(|i| self.peek_byte(cpu.pc + (i as i8))).collect();

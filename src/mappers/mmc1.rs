@@ -64,22 +64,31 @@ impl Mapper for MMC1 {
 
     fn cpu_write(&mut self, addr: Addr, value: u8) -> anyhow::Result<()> {
         // eprintln!("MMC1 write to {addr}, value {value:02x} ({value:08b})");
-        if value & 0b100_0000 != 0 {
+        if value & 0b1000_0000 != 0 {
             // clear shift reg
-            self.shift = 0b0000_0111;
+            self.shift = 0b0010_0000;
             // set prg mode to 3 (fixed last)
             self.control |= 0b1100;
+            eprintln!("Mapper reset!");
             
         } else {
-            self.shift = self.shift << 1 | (value & 1);
+            self.shift = self.shift.rotate_right(1)  |(value << 7);
         }
 
-        // eprintln!("Shift value: {:08b}", self.shift);
+        // eprintln!("Shift value: {:08b} <= {value:08b} {:08b}", self.shift, value << 7);
 
-        if self.shift & 0x80 != 0 {
+        if self.shift & 1 != 0 {
             let reg = 0b1110_0000 & (addr.0 >> 8) as u8;
-            let value = self.shift & 0b0001_1111;
-            eprintln!("Writing {value:08b} into register {reg:02x} {reg:08b}");
+            let value = (self.shift >> 3) & 0b0001_1111;
+            let ri = (reg >> 5) & 0b11;
+            let reg_name = match ri {
+                0 => "CTRL",
+                1 => "CHR0",
+                2 => "CHR1",
+                3 => "PRG0",
+                _ => unreachable!()
+            };
+            // eprintln!("Writing {value:05b} into register {reg_name} ({reg:02x})");
             
             match reg {
                 0x80 => self.control = value,
@@ -89,7 +98,7 @@ impl Mapper for MMC1 {
                 _ => unreachable!()
             }
             
-            self.shift = 0b0000_0111;
+            self.shift = 0b0010_0000;
 
         }
 
@@ -97,15 +106,29 @@ impl Mapper for MMC1 {
     }
 
     fn ppu_read(&self, addr: Addr) -> anyhow::Result<u8> {
-        
+ 
+        if self.chr_dual_bank() {
+            return Ok(self.chr_rom[(((self.chr_bank0 & 0b1111) as u16 * 0x1000) + addr.0) as usize]);
+        }
+
         let bank = if addr < 0x1000 {
             self.chr_bank0
         } else {
             self.chr_bank1
         } as u16;
 
-        let bank_offset = 0x4000 * bank;
-        Ok(self.chr_rom[(addr + bank_offset).0 as usize])
+        // eprintln!("");
+
+        let bank_offset = 0x1000 * (bank & 0b111);
+        let mapped_addr = ((addr.0 % 0x1000) + bank_offset) as usize;
+        // let adjusted_addr = match self.mirroring() {
+        //     Mirroring::OneScreenLower => todo!(),
+        //     Mirroring::OneScreenUpper => todo!(),
+        //     Mirroring::Vertical => todo!(),
+        //     Mirroring::Horizontal => todo!(),
+        // }
+
+        Ok(self.chr_rom[mapped_addr % self.chr_rom.len()])
         
         // Ok(self.chr_rom[addr.0 as usize])
     }
@@ -137,7 +160,7 @@ impl Mapper for MMC1 {
             };
             let rom_addr = bank_offset + (addr.0 as usize - 0xc000);
             let rom_addr2 = rom_addr % self.prg_rom.len();
-            // println!("Reading from {addr:08x} => bank offset {last_bank:04x} => {rom_addr:04x} => {rom_addr2:04x}");
+            // println!("Reading from {addr} => bank ({:?}, {}) offset {bank_offset:04x} => {rom_addr:04x} => {rom_addr2:04x}", self.prg_fixed_bank(), self.prg_bank);
             Ok(self.prg_rom[rom_addr % self.prg_rom.len()])
         }
     }

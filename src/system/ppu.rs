@@ -221,17 +221,19 @@ pub(crate) fn tick(sys: &mut System) -> anyhow::Result<()> {
 
             // TODO: Sprites!
             for i in 0..64 {
-                let y_pos = sys.oam[i + 0];
+                let y_pos = sys.oam[i + 0] as usize;
                 let tile_index = sys.oam[i + 1];
                 let attrs = sys.oam[i + 2];
-                let x_pos = sys.oam[i + 3];
-                if y_pos >= (row as u8) && (y_pos+8) < (row as u8) && x_pos >= (col as u8) && (x_pos+8) < (col as u8) {
+                let x_pos = sys.oam[i + 3] as usize;
+                if y >= y_pos && y < (y_pos+8) && x >= x_pos && x < (x_pos+8) {
                     let base_addr = (tile_index as u16) << 4;
                     let (upper_sliver, lower_sliver) = cart.get_tile(base_addr + ((y as u16) % 8))?;
 
                     let cbits = attrs & 0b0000_0011;
+                    let flip_h = attrs & 0b0100_0000 != 0;
+                    let flip_v = attrs & 0b1000_0000 != 0;
                     
-                    let mask = 0b1000_0000u8 >> (x % 8);
+                    let mask = if flip_h {0b1u8 << (x % 8)} else {0b1000_0000u8 >> (x % 8)};
                     let color_index = (
                         if lower_sliver & mask != 0 {1 << 0} else {0} |
                         if upper_sliver & mask != 0 {1 << 1} else {0} |
@@ -239,11 +241,11 @@ pub(crate) fn tick(sys: &mut System) -> anyhow::Result<()> {
                     );
 
                     let behind =   attrs & 0b0010_0000 != 0;
-                    let flip_h = attrs & 0b0100_0000 != 0;
-                    let flip_v = attrs & 0b1000_0000 != 0;
+
 
                     if enable_fg && !behind {
-                        // sys.ppu.frame_buffer[y][x] = PPU::palette_colors[sys.ppu.palette[color_index as usize] as usize];
+                        // sys.ppu.frame_buffer[y][x] = 0xff00ff;// PPU::palette_colors[sys.ppu.palette[color_index as usize] as usize];
+                        sys.ppu.frame_buffer[y][x] = PPU::palette_colors[sys.ppu.palette[color_index as usize] as usize];
                     }
                     
                     if i == 0 && cbits != 00 && enable_bg && enable_fg {
