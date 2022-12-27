@@ -9,7 +9,6 @@ pub struct MMC1 {
     prg_ram: Vec<u8>,
     #[allow(dead_code)]
     pub(crate) chr_rom: Vec<u8>,
-    pub(crate) chr_ram: Vec<u8>,
     chr_bank0: u8,
     chr_bank1: u8,
     prg_bank: u8,
@@ -17,24 +16,15 @@ pub struct MMC1 {
     shift: u8,
 }
 impl MMC1 {
-    pub fn new(header: &Header, prg_rom: Vec<u8>, chr_rom: Vec<u8>) -> Self {
-        let chr_ram = vec![0u8; 8192];
-
-        let prg_ram_size = match header.mapper_id {
-            // 0 => 4096,
-            0 => 0x2000,
-            1 => 0,
-            2 => 0,
-            mapper => panic!("mapper {mapper} is not implemented")
-        };
-        let prg_ram = vec![0; prg_ram_size];
+    const PRG_RAM_SIZE: usize = 0x8000;
+    pub fn new(_header: &Header, prg_rom: Vec<u8>, chr_rom: Vec<u8>) -> Self {
+        let prg_ram = vec![0; Self::PRG_RAM_SIZE];
 
 
         Self {
             prg_rom, 
             prg_ram,
             chr_rom,
-            chr_ram,
             chr_bank0: 0,
             chr_bank1: 0,
             prg_bank: 0,
@@ -77,6 +67,9 @@ impl Mapper for MMC1 {
         if value & 0b100_0000 != 0 {
             // clear shift reg
             self.shift = 0b0000_0111;
+            // set prg mode to 3 (fixed last)
+            self.control |= 0b1100;
+            
         } else {
             self.shift = self.shift << 1 | (value & 1);
         }
@@ -99,9 +92,7 @@ impl Mapper for MMC1 {
             self.shift = 0b0000_0111;
 
         }
-        // if addr > 0x8000 {
-            
-        // }
+
         Ok(())
     }
 
@@ -120,23 +111,31 @@ impl Mapper for MMC1 {
     }
 
     fn cpu_read(&self, addr: Addr) -> anyhow::Result<u8> {
+        // eprintln!("Reading from {addr} using {:?}, bank {}", self.prg_fixed_bank(), self.prg_bank);
         if addr < 0x6000 {
             anyhow::bail!("read outside pgm range: {addr}")
         } else if addr < 0x8000 {
+            // PRG RAM
             anyhow::bail!("read outside pgm range: {addr}")
             // self.prg_ram[addr - 0x6000]
         } else if addr < 0xc000 {
-            // switchable bank
-            let bank_offset = self.prg_bank as usize * 0x4000;
+
+            let bank = match self.prg_fixed_bank() {
+                PrgFixedBank::First => 0,
+                PrgFixedBank::Last | PrgFixedBank::None => self.prg_bank,
+            };
+
+            let bank_offset = bank as usize * 0x4000;
             let rom_addr = bank_offset + (addr.0 as usize - 0x8000);
-            let rom_addr2 = rom_addr % self.prg_rom.len();
             // println!("Reading from {addr:08x} => bank offset {last_bank:04x} => {rom_addr:04x} => {rom_addr2:04x}");
             Ok(self.prg_rom[rom_addr % self.prg_rom.len()])
         } else {
-            // static last bank
-            
-            let last_bank = self.prg_rom.len() - 0x4000;
-            let rom_addr = last_bank + (addr.0 as usize - 0xc000);
+            let bank_offset = match self.prg_fixed_bank() {
+                PrgFixedBank::Last => self.prg_rom.len() - 0x4000,
+                PrgFixedBank::First => self.prg_bank as usize * 0x4000,
+                PrgFixedBank::None => (self.prg_bank + 1) as usize * 0x4000,
+            };
+            let rom_addr = bank_offset + (addr.0 as usize - 0xc000);
             let rom_addr2 = rom_addr % self.prg_rom.len();
             // println!("Reading from {addr:08x} => bank offset {last_bank:04x} => {rom_addr:04x} => {rom_addr2:04x}");
             Ok(self.prg_rom[rom_addr % self.prg_rom.len()])
@@ -152,6 +151,7 @@ impl std::fmt::Display for MMC1 {
 
 /*(0: one-screen, lower bank; 1: one-screen, upper bank;
 |||               2: vertical; 3: horizontal) */
+#[derive(Debug)]
 enum Mirroring {
     OneScreenLower = 0,
     OneScreenUpper = 1,
@@ -160,12 +160,16 @@ enum Mirroring {
 }
 
 /* |++--- PRG ROM bank mode (
-           0, 1: switch 32 KB at $8000, ignoring low bit of bank number;
-|          2: fix first bank at $8000 and switch 16 KB bank at $C000;
-    |      3: fix last bank at $C000 and switch 16 KB bank at $8000)
+           0, 1: 
+|          2: 
+    |      3: 
          */
+#[derive(Debug)]
 enum PrgFixedBank {
+    /// switch 32 KB at $8000, ignoring low bit of bank number;
     None,
+    /// fix first bank at $8000 and switch 16 KB bank at $C000;
     First,
+    /// fix last bank at $C000 and switch 16 KB bank at $8000)
     Last,
 }

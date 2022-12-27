@@ -136,7 +136,7 @@ pub(crate) fn tick(sys: &mut System) -> anyhow::Result<()> {
     if row <= 239 {
         if col >= 4 && col < 260 {
             let nm_base = (sys.ppu.nametable_address() - 0x2000) as usize;
-            let at_base = nm_base + 0x360  as usize;
+            let at_base = nm_base + 0x3c0  as usize;
             let [scroll_x, scroll_y] = sys.ppu.scroll;
             let y = (row as u16 + scroll_y as u16) as usize;
             let x = ((col - 4) + scroll_x as u16) as usize;
@@ -148,13 +148,13 @@ pub(crate) fn tick(sys: &mut System) -> anyhow::Result<()> {
             let nm_y = (y / 8) * 32;
             let nm_x = x / 8;
             let nm_addr = (nm_base + nm_y + nm_x) as usize;
-            let at_addr = (at_base + (nm_y/2) + (nm_x/2)) as usize;
+            let at_addr = (at_base + (8*(y/32)) + (x/32)) as usize;
 
             // eprintln!("{nm_y} ({y}) x {nm_x} ({x}) => {nm_addr}");
             let tile_index = sys.ppu.vram[nm_addr];
             let attributes = sys.ppu.vram[at_addr];
 
-            let cbits = match (nm_x % 2, nm_y % 2) {
+            let cbits = match ((x / 16) % 2, (y / 16) % 2) {
                 (0,0) => attributes & 0x3, // topleft
                 (1,0) => attributes >> 2 & 0x3, // topright
                 (0,1) => attributes >> 4 & 0x3, // bottomleft
@@ -171,10 +171,19 @@ pub(crate) fn tick(sys: &mut System) -> anyhow::Result<()> {
 
             let mask = 0b1000_0000u8 >> (x % 8);
             let color_index = (
-                if lower_sliver & mask != 0 {1 << 0} else {0} |
-                if upper_sliver & mask != 0 {1 << 1} else {0} |
+                if upper_sliver & mask != 0 {1 << 0} else {0} |
+                if lower_sliver & mask != 0 {1 << 1} else {0} |
                 cbits << 2
             );
+
+            // if nm_x == 20 && y/8 == 6 && color_index != 0 {
+            //     eprint!("X: {:3} Y: {:3} => ", x/8, y / 8);
+            //     eprint!("X: {:3} Y: {:3} => ", x/32, y / 32);
+            //     eprintln!("Cbits: {cbits:08b} atPart: {}, {}", nm_x % 2, nm_y % 2);
+            //     eprintln!("CI: {color_index:02x} {color_index:04b} A: {attributes:02x} {attributes:08b}");
+            //     eprintln!("NTAddr: {nm_addr:04x} ATAddr: {at_addr:04x}");
+            //     eprintln!("Tile: {tile_index:02x} {tile_index:08b}");
+            // }
 
             // if (color_index != 0) {
             //     eprintln!("Color index: {color_index} {color_index:02x} {color_index:04b}");
@@ -204,7 +213,7 @@ pub(crate) fn tick(sys: &mut System) -> anyhow::Result<()> {
                 // eprintln!("{x} {} {y} {}", x % 8, y % 8);
             }
 
-            if enable_bg || true {
+            if enable_bg {
                 sys.ppu.frame_buffer[y][x] = PPU::palette_colors[sys.ppu.palette[color_index as usize] as usize];
             }
 
@@ -234,7 +243,7 @@ pub(crate) fn tick(sys: &mut System) -> anyhow::Result<()> {
                     let flip_v = attrs & 0b1000_0000 != 0;
 
                     if enable_fg && !behind {
-                        sys.ppu.frame_buffer[y][x] = PPU::palette_colors[sys.ppu.palette[color_index as usize] as usize];
+                        // sys.ppu.frame_buffer[y][x] = PPU::palette_colors[sys.ppu.palette[color_index as usize] as usize];
                     }
                     
                     if i == 0 && cbits != 00 && enable_bg && enable_fg {
