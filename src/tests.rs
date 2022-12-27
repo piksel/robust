@@ -150,7 +150,6 @@ fn run_with_expect_log(cart_file: &str, log_file: &str, start_pc: u16, steps: us
 
         for i in 0..ppu_cycles {
             ppu::tick(&mut system);
-            eprint!(" [{i}] {}, {}", system.ppu.scan_line, system.ppu.scan_row);
         }
 
         eprintln!();

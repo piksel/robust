@@ -4,6 +4,8 @@ use core::panic;
 
 use anyhow::{Result, format_err, bail};
 
+use crate::mappers::{self, Mapper};
+
 use super::addr::Addr;
 
 #[allow(dead_code)]
@@ -15,12 +17,7 @@ type ByteResult = IOResult<u8>;
 
 pub(crate) struct Cart {
     pub(crate) header: Header,
-    pub(crate) prg_rom: Vec<u8>,
-    prg_ram: Vec<u8>,
-    #[allow(dead_code)]
-    pub(crate) chr_rom: Vec<u8>,
-    pub(crate) chr_ram: Vec<u8>,
-    chr_bank: u8,
+    pub mapper: Box<dyn Mapper>,
 }
 
 impl Cart {
@@ -32,96 +29,41 @@ impl Cart {
 
         let prg_rom = head.by_ref().take(header.prg_rom_size).collect::<IOResult<Vec<u8>>>()?;
         let chr_rom = head.by_ref().take(header.chr_rom_size).collect::<IOResult<Vec<u8>>>()?;
-        let chr_ram = vec![0u8; 8192];
 
-        let prg_ram_size = match header.mapper {
-            // 0 => 4096,
-            0 => 0x2000,
-            1 => 0,
-            2 => 0,
-            mapper => panic!("mapper {mapper} is not implemented")
-        };
-        let prg_ram = vec![0; prg_ram_size];
+        let mapper = mappers::new(&header, prg_rom, chr_rom)?;
+
+
 
         Ok(Cart{
             header,
-            prg_rom,
-            chr_rom,
-            chr_ram,
-            prg_ram,
-            chr_bank: 0,
+            mapper,
         })
     }
 
     pub(crate) fn read_prg_byte(&self, addr: usize) -> u8 {
-        match self.header.mapper {
-            0 | 1 => {
-                if addr < 0x6000 {
-                    panic!("read outside pgm range: {addr}")
-                } else if addr < 0x8000 {
-                    self.prg_ram[addr - 0x6000]
-                } else {
-                    self.prg_rom[(addr - 0x8000) % self.header.prg_rom_size]
-                }
-            }
-            2 => {
-                
-                if addr < 0x6000 {
-                    panic!("read outside pgm range: {addr}")
-                } else if addr < 0x8000 {
-                    panic!("read outside pgm range: {addr}")
-                    // self.prg_ram[addr - 0x6000]
-                } else if addr < 0xc000 {
-                    // switchable bank
-                    let bank_offset = self.chr_bank as usize * 0x4000;
-                    let rom_addr = bank_offset + (addr - 0x8000);
-                    let rom_addr2 = rom_addr % self.header.prg_rom_size;
-                    // println!("Reading from {addr:08x} => bank offset {last_bank:04x} => {rom_addr:04x} => {rom_addr2:04x}");
-                    self.prg_rom[rom_addr % self.header.prg_rom_size]
-                } else {
-                    // static last bank
-                    
-                    let last_bank = self.header.prg_rom_size - 0x4000;
-                    let rom_addr = last_bank + (addr - 0xc000);
-                    let rom_addr2 = rom_addr % self.header.prg_rom_size;
-                    // println!("Reading from {addr:08x} => bank offset {last_bank:04x} => {rom_addr:04x} => {rom_addr2:04x}");
-                    self.prg_rom[rom_addr % self.header.prg_rom_size]
-                }
-            }
-            mapper => panic!("reading is not implemented for mapper {mapper}")
-        }
+        self.mapper.cpu_read(Addr(addr as u16)).unwrap()
+        
     }
 
     pub fn read_chr_byte(&self, addr: u16) -> u8 {
-        match self.header.mapper {
-            0 | 1 => {
-                self.chr_rom[addr as usize]
-            }
-            2 => {
-                self.chr_ram[addr as usize]
-            }
-            mapper => panic!("reading is not implemented for mapper {mapper}")
-        }
+        self.mapper.ppu_read(addr.into()).unwrap()
     }
 
     pub(crate) fn write_byte(&mut self, addr: Addr, value: u8) {
-        match self.header.mapper {
-            2 => {
-                if addr > 0x8000 {
-                    let banks = (self.header.prg_rom_size / 0x4000) as u8;
-                    assert!(value < banks);
-                    eprintln!("CHR switched to bank {value:02x} ({value:08b})");
-                    self.chr_bank = value;
-                }
-            }
-            m =>  eprintln!("tried to write to 0x{value:02x} to cart ({addr}) which is not implemented for mapper {m}")
-        }
-       
+        self.mapper.cpu_write(addr, value).unwrap();
+    }
+
+    pub(crate) fn get_tile(&self, addr: u16) -> anyhow::Result<(u8, u8)> {
+        let upper_addr = Addr(addr);
+        let lower_addr = upper_addr + 8;
+        let upper_sliver = self.mapper.ppu_read(upper_addr)?;// .chr_rom[upper_addr as usize];
+        let lower_sliver = self.mapper.ppu_read(lower_addr)?;// as usize];
+        Ok((upper_sliver, lower_sliver))
     }
 }
 
 #[allow(dead_code)]
-pub(crate) struct Header {
+pub struct Header {
     header_type: HeaderType,
     pub(crate) vertical_mirroring: bool, 
     pub(crate) battery_ram: bool, 
@@ -129,7 +71,7 @@ pub(crate) struct Header {
     pub(crate) no_mirror: bool,
     pub(crate) prg_rom_size: usize,
     pub(crate) chr_rom_size: usize,
-    pub(crate) mapper: u16
+    pub(crate) mapper_id: u16
 }
 
 enum HeaderType {
@@ -208,9 +150,9 @@ impl Header {
                 let flags10 = bytes.next().ok_or_else(too_short_err)??;
             }
 
-            let mapper = (flags6 as u16 & 0xf0) >> 4 | (flags7 as u16 & 0xf0);
+            let mapper_id = (flags6 as u16 & 0xf0) >> 4 | (flags7 as u16 & 0xf0);
 
-            eprintln!("Mapper: {mapper} ({mapper:016b}), f6lo: {flags6:08b}, f7hi: {flags7:08b}");
+            eprintln!("Mapper: {mapper_id} ({mapper_id:016b}), f6lo: {flags6:08b}, f7hi: {flags7:08b}");
     
             // Unused
             let _ = bytes.by_ref().take(5).collect::<IOResult<Vec<u8>>>()?;
@@ -225,7 +167,7 @@ impl Header {
             let header_type = HeaderType::INES(INESHeader{});
 
             Ok(Self{
-                mapper,
+                mapper_id,
                 header_type,
                 prg_rom_size,
                 chr_rom_size,
@@ -242,4 +184,7 @@ impl Header {
 
     }
 }
+
+
+
 

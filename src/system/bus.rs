@@ -61,7 +61,7 @@ impl super::System {
                 }
             },
             BusTarget::OAMDMA => {
-                println!("Writing to OAM using DMA on bank {value:02x}");
+                // println!("Writing to OAM using DMA on bank {value:02x}");
                 assert_eq!(self.ppu.oam_addr, 0);
                 for lsb in 0..255 {
                     self.oam[lsb] = self.read_byte(Addr::from_bytes(value, lsb as u8));

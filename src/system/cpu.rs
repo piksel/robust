@@ -72,29 +72,23 @@ impl CPU {
         }
     }
 
-    pub fn stack_push_word(sys: &mut System, value: u16) {
-        eprintln!("Pushing word {value:04x} to stack at {:02x}", sys.cpu.sp);
-        sys.cpu.sp = sys.cpu.sp.checked_sub(1).or_else(|| {
-            let _ = sys.dump_stack();
-            None
-        }).expect("stack overflow!");
-        let addr = CPU::addr_stack(sys.cpu.sp);
-        sys.write_word(addr, value);
-        sys.cpu.sp = sys.cpu.sp.checked_sub(1).or_else(|| {
-            let _ = sys.dump_stack();
-            None
-        }).expect("stack overflow!");
-        // println!("{value:04x} written to stack at {addr:04x}");
+    pub fn stack_push_word(sys: &mut System, value: u16) -> anyhow::Result<()> {
+        // eprintln!("Pushing word {value:04x} to stack at {:02x}", sys.cpu.sp);
+        Self::stack_push_byte(sys, (value >> 8) as u8)?;
+        Self::stack_push_byte(sys, value as u8)?;
+        Ok(())
     }
 
-    pub fn stack_push_byte(sys: &mut System, value: u8) {
-        eprintln!("Pushing byte {value:02x} to stack at {:02x}", sys.cpu.sp);
+    pub fn stack_push_byte(sys: &mut System, value: u8) -> anyhow::Result<()> {
+        // eprintln!("Pushing byte {value:02x} to stack at {:02x}", sys.cpu.sp);
         let addr = CPU::addr_stack(sys.cpu.sp);
         sys.write_byte(addr, value);
-        sys.cpu.sp = sys.cpu.sp.checked_sub(1).or_else(|| {
-            let _ = sys.dump_stack();
-            None
-        }).expect("stack overflow!");
+        if let Some(sp) = sys.cpu.sp.checked_sub(1) {
+            sys.cpu.sp = sp;
+            Ok(())
+        } else {
+            anyhow::bail!("stack overflow!")
+        }
     }
 
     fn stack_pull_word(sys: &mut System) -> u16 {

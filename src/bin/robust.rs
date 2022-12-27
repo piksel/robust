@@ -19,7 +19,10 @@ pub struct Args {
     scale: Scale,
 
     #[arg(short = 't', long = "trace", default_value = "false")]
-    trace: bool
+    trace: bool,
+
+    #[arg(short = 'H', long = "history", default_value = "10")]
+    history: usize,
 }
 
 fn main() -> Result<()> { 
@@ -33,6 +36,7 @@ fn main() -> Result<()> {
     color_backtrace::install();
     let mut system = system::System::new(Options{
         dump_ops: args.trace,
+        history_len: args.history,
         ..Default::default()
     });
 
@@ -138,6 +142,7 @@ fn main() -> Result<()> {
             let last_state = system.run_cycle().or_else(|e| {
                 eprintln!("\nStack:");
                 system.print_stack()?;
+                system.dump_history();
                 eprintln!();
                 Err(e)
             })?;

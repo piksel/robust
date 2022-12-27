@@ -27,12 +27,14 @@ pub struct System {
     pub(crate) oam: [u8; 256],
     pub opts: Options,
     pub(crate) nmi: bool,
+    history: Vec<ExecutionState>,
+    history_pos: usize,
 }
 
 impl System {
     pub fn new(opts: Options) -> Self {
         let cpu = CPU::init();
-        
+        let history_pos = opts.history_len-1;
         System {
             ram: vec![0; 2048],
             ppu: ppu::PPU::init(),
@@ -43,6 +45,8 @@ impl System {
             oam: [0u8; 256],
             opts,
             nmi: false,
+            history: Vec::new(),
+            history_pos,
         }
     }
 
@@ -70,8 +74,15 @@ impl System {
         dump_mem(&self.oam, Some(Addr::from_zero(self.ppu.oam_addr))).expect("failed to dump oam");
     }
 
-    fn dump_stack(&self) {
+    pub fn dump_stack(&self) {
         dump_mem(self.ram.iter().skip(CPU::STACK_BOT.0 as usize).take(0xff), Some(Addr::from_zero(self.cpu.sp))).expect("failed to dump stack");
+    }
+
+    pub fn dump_history(&self) {
+        for (i, hi) in (self.history_pos..self.opts.history_len).chain(0..self.history_pos).enumerate() {
+            let state = &self.history[hi];
+            eprintln!("[{:3}] {state}", 1isize - (self.opts.history_len - i) as isize);
+        }
     }
 
     pub fn load_cart(&mut self, cart_file: &fs::File) -> Result<()> {
@@ -133,13 +144,13 @@ impl System {
 
             if self.nmi {
                     // panic!("First NMI at {}", self.cycles);
-                CPU::stack_push_word(self, self.cpu.pc.into());
-                CPU::stack_push_byte(self, self.cpu.status());
+                CPU::stack_push_word(self, self.cpu.pc.into())?;
+                CPU::stack_push_byte(self, self.cpu.status())?;
 
                 let nmi_handler_addr = self.read_addr(0xfffa);
                 self.cpu.pc = nmi_handler_addr;
 
-                eprintln!("NMI! => {nmi_handler_addr}");
+                // eprintln!("NMI! => {nmi_handler_addr}");
                 
                 self.nmi = false;
             }
@@ -158,11 +169,27 @@ impl System {
                     cycles: self.cycles,
                     ppu: (self.ppu.scan_row, self.ppu.scan_line)
             };
-    
+
             if self.opts.dump_ops {
                 // let actual_log = actual.to_string();
                 eprintln!("{actual}");
             }
+
+            if self.opts.history_len > 0 {
+                if self.history.len() < self.opts.history_len {
+                    self.history.push(actual.clone());
+                    self.history_pos = self.history.len() - 1;
+                } else {
+                    self.history[self.history_pos] = actual.clone();
+                    self.history_pos += 1;
+                    if self.history_pos == self.opts.history_len {
+                        self.history_pos = 0;
+                    }   
+                    
+                }
+            }
+
+      
 
             let cpu_cycles = op.execute(self, &am);
             let ppu_cycles = cpu_cycles * 3;

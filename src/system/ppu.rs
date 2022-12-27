@@ -5,10 +5,24 @@ const POST_RENDER_LINE: u16 = 240;
 
 pub struct PPU {
     control: u8,
+    /*
+    7  bit  0
+    ---- ----
+    BGRs bMmG
+    |||| ||||
+    |||| |||+- Greyscale (0: normal color, 1: produce a greyscale display)
+    |||| ||+-- 1: Show background in leftmost 8 pixels of screen, 0: Hide
+    |||| |+--- 1: Show sprites in leftmost 8 pixels of screen, 0: Hide
+    |||| +---- 1: Show background
+    |||+------ 1: Show sprites
+    ||+------- Emphasize red (green on PAL/Dendy)
+    |+-------- Emphasize green (red on PAL/Dendy)
+    +--------- Emphasize blue
+    */
     mask: u8,
     pub status: u8,
     pub(crate) oam_addr: u8,
-    oam_data: u8,
+    data: u8,
     scroll: [u8; 2],
     addr: u16,
     scroll_y: bool,
@@ -22,7 +36,7 @@ pub struct PPU {
     // pub mono_frame_buffer: [[u8; 256]; 240],
     pub frame_buffer: [[u32; 256]; 240],
 
-    pub vram: [u8; 2048],
+    pub vram: [u8; 0x4000],
     pub palette: [u8; 32],
     pub bg_patterns: [u16; 2],
     pub bg_palettes: [u8; 2],
@@ -43,7 +57,7 @@ impl PPU {
             mask: 0,
             status: 0,
             oam_addr: 0,
-            oam_data: 0,
+            data: 0,
             scroll: [0; 2],
             addr: 0,
             scroll_y: false,
@@ -51,7 +65,7 @@ impl PPU {
             scan_line: 21,
             scan_row: 0,
             frame_buffer: [[0u32; 256]; 240],
-            vram: [0; 2048],
+            vram: [0; 0x4000],
             palette: [0; 32],
             bg_patterns: [0; 2],
             bg_palettes: [0; 2],
@@ -82,7 +96,7 @@ impl PPU {
 
 }
 
-pub(crate) fn tick(sys: &mut System) {
+pub(crate) fn tick(sys: &mut System) -> anyhow::Result<()> {
 
     // increase the scan pos
     if sys.ppu.scan_line >= 340 {
@@ -127,6 +141,10 @@ pub(crate) fn tick(sys: &mut System) {
             let y = (row as u16 + scroll_y as u16) as usize;
             let x = ((col - 4) + scroll_x as u16) as usize;
 
+            let enable_mask = if x <= 8 {sys.ppu.mask << 2} else {sys.ppu.mask};
+            let enable_bg = enable_mask & 0b0000_1000 != 0;
+            let enable_fg = enable_mask & 0b0001_0000 != 0;
+
             let nm_y = (y / 8) * 32;
             let nm_x = x / 8;
             let nm_addr = (nm_base + nm_y + nm_x) as usize;
@@ -145,13 +163,11 @@ pub(crate) fn tick(sys: &mut System) {
             };
 
             let base_addr = (tile_index as u16) << 4;
-            let upper_addr = base_addr + ((y as u16) % 8);
-            let lower_addr = upper_addr + 8;
-
-
             let cart = sys.cart.as_ref().unwrap();
-            let upper_sliver = cart.read_chr_byte(upper_addr);// .chr_rom[upper_addr as usize];
-            let lower_sliver = cart.read_chr_byte(lower_addr);// as usize];
+            let (upper_sliver, lower_sliver) = cart.get_tile(base_addr + ((y as u16) % 8))?;
+
+
+
 
             let mask = 0b1000_0000u8 >> (x % 8);
             let color_index = (
@@ -188,20 +204,55 @@ pub(crate) fn tick(sys: &mut System) {
                 // eprintln!("{x} {} {y} {}", x % 8, y % 8);
             }
 
-
-            sys.ppu.frame_buffer[y][x] = PPU::palette_colors[sys.ppu.palette[color_index as usize] as usize];
+            if enable_bg || true {
+                sys.ppu.frame_buffer[y][x] = PPU::palette_colors[sys.ppu.palette[color_index as usize] as usize];
+            }
 
             // eprint!("")
-
-
 
             // TODO: Sprites!
             for i in 0..64 {
                 let y_pos = sys.oam[i + 0];
+                let tile_index = sys.oam[i + 1];
+                let attrs = sys.oam[i + 2];
                 let x_pos = sys.oam[i + 3];
-                if y_pos == (row as u8) {
-                    // Sprite zero hit!
-                    sys.ppu.status |= 0b0100_0000;
+                if y_pos >= (row as u8) && (y_pos+8) < (row as u8) && x_pos >= (col as u8) && (x_pos+8) < (col as u8) {
+                    let base_addr = (tile_index as u16) << 4;
+                    let (upper_sliver, lower_sliver) = cart.get_tile(base_addr + ((y as u16) % 8))?;
+
+                    let cbits = attrs & 0b0000_0011;
+                    
+                    let mask = 0b1000_0000u8 >> (x % 8);
+                    let color_index = (
+                        if lower_sliver & mask != 0 {1 << 0} else {0} |
+                        if upper_sliver & mask != 0 {1 << 1} else {0} |
+                        cbits << 2
+                    );
+
+                    let behind =   attrs & 0b0010_0000 != 0;
+                    let flip_h = attrs & 0b0100_0000 != 0;
+                    let flip_v = attrs & 0b1000_0000 != 0;
+
+                    if enable_fg && !behind {
+                        sys.ppu.frame_buffer[y][x] = PPU::palette_colors[sys.ppu.palette[color_index as usize] as usize];
+                    }
+                    
+                    if i == 0 && cbits != 00 && enable_bg && enable_fg {
+
+                        /*
+                        TODO: Sprite 0 hit does not happen:
+                            If background or sprite rendering is disabled in PPUMASK ($2001)
+                            At x=0 to x=7 if the left-side clipping window is enabled (if bit 2 or bit 1 of PPUMASK is 0).
+                            At x=255, for an obscure reason related to the pixel pipeline.
+                          x At any pixel where the background or sprite pixel is transparent (2-bit color index from the CHR pattern is %00).
+                            If sprite 0 hit has already occurred this frame. Bit 6 of PPUSTATUS ($2002) is cleared to 0 at dot 1 of the pre-render line. This means only the first sprite 0 hit in a frame can be detected.
+                        */
+                        
+                        // Sprite zero hit!
+                        sys.ppu.status |= 0b0100_0000;
+                        // eprintln!("SPRITE0 HIT")
+                    }
+
                 }
 
             }
@@ -210,7 +261,7 @@ pub(crate) fn tick(sys: &mut System) {
             // eprintln!();
         }
     }
-
+    Ok(())
     
 }
 
@@ -319,10 +370,32 @@ pub(crate) fn read(sys: &mut System, address: u8) -> u8 {
             value
         }
         3 => panic!("tried to read from OAM ADDR"),
-        4 => panic!("tried to read from OAM DATA"),
+        4 => {
+
+            panic!("tried to read from OAM DATA")
+        },
         5 => panic!("tried to read from PPU SCROLL"), //sys.ppu.scroll,
         6 => panic!("tried to read from PPU ADDRESS"), //sys.ppu.addr,
-        7 => panic!("tried to read from PPU DATA"), //sys.ppu.addr,sys.ppu.data,
+        7 => {
+            let value = sys.ppu.data;
+
+            sys.ppu.data = if sys.ppu.addr < 0x2000 {
+                // Reading from to CHR-RAM
+                sys.ppu.vram[sys.ppu.addr as usize]
+            } else if sys.ppu.addr < 0x3000 {
+                let addr = mirrored_addr(sys, sys.ppu.addr - 0x2000);
+
+                sys.ppu.vram[addr as usize]
+            } else if sys.ppu.addr < 0x3fff {
+                sys.ppu.vram[sys.ppu.addr as usize]
+            } else {
+                panic!("Tried to read from PPUDATA {:04x}", sys.ppu.addr)
+            };
+
+            bump_addr(sys);
+
+            value
+        }
         _ => panic!("invalid PPU address {address}"),
     };
     if value != 0 {

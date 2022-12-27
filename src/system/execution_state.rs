@@ -2,6 +2,7 @@ use crate::system::cpu;
 use std::fmt::{self, Write};
 
 
+#[derive(Clone)]
 pub struct ExecutionState {
     pub cpu: cpu::CPU,
     pub am: cpu::AddressMode,
