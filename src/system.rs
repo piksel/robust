@@ -80,6 +80,7 @@ impl System {
 
     pub fn dump_history(&self) {
         for (i, hi) in (self.history_pos..self.opts.history_len).chain(0..self.history_pos).enumerate() {
+            if hi >= self.history.len() {break}
             let state = &self.history[hi];
             eprintln!("[{:3}] {state}", 1isize - (self.opts.history_len - i) as isize);
         }
@@ -114,11 +115,12 @@ impl System {
         Ok(())
     }
 
-    pub fn reset(&mut self) {
+    pub fn reset(&mut self) -> Result<()> {
         // Read reset vector
-        let rv = self.read_addr(0xfffc);
+        let rv = self.read_addr(0xfffc)?;
         self.cpu.pc = rv;
         eprintln!("Resetting to {}", self.cpu.pc);
+        Ok(())
     }
 
     pub fn run_cycle(&mut self) -> Result<ExecutionState> {
@@ -147,7 +149,7 @@ impl System {
                 CPU::stack_push_word(self, self.cpu.pc.into())?;
                 CPU::stack_push_byte(self, self.cpu.status())?;
 
-                let nmi_handler_addr = self.read_addr(0xfffa);
+                let nmi_handler_addr = self.read_addr(0xfffa)?;
                 self.cpu.pc = nmi_handler_addr;
 
                 // eprintln!("NMI! => {nmi_handler_addr}");
@@ -191,13 +193,13 @@ impl System {
 
       
 
-            let cpu_cycles = op.execute(self, &am);
+            let cpu_cycles = op.execute(self, &am)?;
             let ppu_cycles = cpu_cycles * 3;
 
             let scan_row_before = self.ppu.scan_row;
 
             for _ in 0..ppu_cycles {
-                ppu::tick(self);
+                ppu::tick(self)?;
             }
 
             if scan_row_before < 241 && self.ppu.scan_row >= 241 {
@@ -243,7 +245,7 @@ impl System {
                 if self.cpu.sp == addr {
                     stderr.set_color(ColorSpec::new().set_fg(Some(Color::Green)).set_intense(true))?;
                 }
-                write!(&mut stderr, "{:02x} ", self.read_byte(CPU::addr_stack(addr)))?;
+                write!(&mut stderr, "{:02x} ", self.read_byte(CPU::addr_stack(addr))?)?;
 
                 if self.cpu.sp == addr {
                     stderr.set_color(&ColorSpec::new())?;
@@ -277,7 +279,7 @@ pub fn dump_mem<'a, T>(source: T, curr_address: Option<addr::Addr>) -> Result<()
         } else {
             stderr.set_color(ColorSpec::new().set_fg(Some(Color::Black)).set_intense(true))?;
         }
-        write!(&mut stderr, "{x:02x} ")?;
+        write!(&mut stderr, " {x:01x} ")?;
     }
     writeln!(&mut stderr)?;
 
@@ -293,7 +295,7 @@ pub fn dump_mem<'a, T>(source: T, curr_address: Option<addr::Addr>) -> Result<()
             } else {
                 stderr.set_color(ColorSpec::new().set_fg(Some(Color::Black)).set_intense(true))?;
             }
-            write!(&mut stderr, "{y:03x} ").unwrap();
+            write!(&mut stderr, " {:02x} ", y >> 4).unwrap();
         }
         
         if value == 0x00 {
@@ -307,34 +309,35 @@ pub fn dump_mem<'a, T>(source: T, curr_address: Option<addr::Addr>) -> Result<()
 
         let val_char = value as char;
 
-        chars[x] = if val_char.is_ascii_graphic() {val_char} else {'.'};
+        chars[x] = val_char;
 
         if x == 0xf {
+            for char in chars {
+                if char.is_ascii_graphic() {
+                    stderr.set_color(ColorSpec::new().set_fg(Some(Color::Yellow)).set_intense(true))?;
+                    write!(&mut stderr, "{char}")?;
+                } else {
 
-            writeln!(&mut stderr, "{}", String::from_iter(chars))?;
+                    match char as u8 {
+                        0 => {
+                            stderr.set_color(ColorSpec::new().set_fg(Some(Color::Black)).set_intense(true))?;
+                        },
+                        255 => {
+                            stderr.set_color(ColorSpec::new().set_fg(Some(Color::Magenta)).set_intense(true))?;
+                        }
+                        _ => {
+                            stderr.set_color(&ColorSpec::new())?;
+                            
+                        }
+                    }
+                    write!(&mut stderr, ".")?;
+                }
+                // ▮
+            }
+            writeln!(&mut stderr)?;
             chars = ['.'; 16];
         }
     }
 
-    // for y in 0..0x10_u8 {
-        
-        
-
-        
-    //     ;
-    //     for x in 0..0x10 {
-    //         //if y == 0
-    //         let addr = base + x;
-    //         if self.cpu.sp == addr {
-    //             stderr.set_color(ColorSpec::new().set_fg(Some(Color::Green)).set_intense(true))?;
-    //         }
-    //         write!(&mut stderr, "{:02x} ", self.read_byte(CPU::addr_stack(addr)))?;
-
-    //         if self.cpu.sp == addr {
-    //             stderr.set_color(&ColorSpec::new())?;
-    //         }
-    //     }
-    //     writeln!(&mut stderr)?;
-    // }
     Ok(())
 }

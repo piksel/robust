@@ -28,7 +28,11 @@ impl Cart {
         let header = Header::from_bytes(head.by_ref().take(16))?;
 
         let prg_rom = head.by_ref().take(header.prg_rom_size).collect::<IOResult<Vec<u8>>>()?;
-        let chr_rom = head.by_ref().take(header.chr_rom_size).collect::<IOResult<Vec<u8>>>()?;
+        let chr_rom = if header.chr_rom_size == 0 {
+            vec![0; 0x2000]
+        } else {
+            head.by_ref().take(header.chr_rom_size).collect::<IOResult<Vec<u8>>>()?
+        };
 
         let mapper = mappers::new(&header, prg_rom, chr_rom)?;
 
@@ -43,10 +47,6 @@ impl Cart {
     pub(crate) fn read_prg_byte(&self, addr: usize) -> u8 {
         self.mapper.cpu_read(Addr(addr as u16)).unwrap()
         
-    }
-
-    pub fn read_chr_byte(&self, addr: u16) -> u8 {
-        self.mapper.ppu_read(addr.into()).unwrap()
     }
 
     pub(crate) fn write_byte(&mut self, addr: Addr, value: u8) {

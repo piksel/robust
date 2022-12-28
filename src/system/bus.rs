@@ -15,19 +15,19 @@ use super::{ppu, addr::{self, Addr}, apu};
 
 impl super::System {
 
-    pub fn read_byte<A: Into<Addr>>(&mut self, addr: A) -> u8 {
+    pub fn read_byte<A: Into<Addr>>(&mut self, addr: A) -> anyhow::Result<u8> {
         let addr = addr.into();
         match self.map_addr(addr) {
-            BusTarget::RAM(ra) => self.ram[ra],
+            BusTarget::RAM(ra) => Ok(self.ram[ra]),
             BusTarget::PPU(ra) => ppu::read(self, ra as u8),
-            BusTarget::APU(ra) => apu::read(self, ra as u8),
+            BusTarget::APU(ra) => Ok(apu::read(self, ra as u8)),
             BusTarget::PRG => {
                 match &self.cart {
-                    None => panic!("tried to read from cart when not loaded"),
-                    Some(cart) => cart.read_prg_byte(addr.0 as usize)
+                    None => anyhow::bail!("tried to read from cart when not loaded"),
+                    Some(cart) => cart.mapper.cpu_read(addr)
                 }
             },
-            BusTarget::OAMDMA => panic!("tried to read from OAM DMA"),
+            BusTarget::OAMDMA => anyhow::bail!("tried to read from OAM DMA"),
         }
     }
 
@@ -40,18 +40,18 @@ impl super::System {
             BusTarget::PRG => {
                 match &self.cart {
                     None => panic!("tried to read from cart when not loaded"),
-                    Some(cart) => cart.read_prg_byte(addr.0 as usize)
+                    Some(cart) => cart.mapper.cpu_read(addr).unwrap()
                 }
             },
             BusTarget::OAMDMA => panic!("tried to read from OAM DMA"),
         }
     }
 
-    pub fn write_byte<A: Into<Addr>>(&mut self, addr: A, value: u8) {
+    pub fn write_byte<A: Into<Addr>>(&mut self, addr: A, value: u8) -> anyhow::Result<()> {
         let addr = addr.into();
         match self.map_addr(addr.into()) {
             BusTarget::RAM(ra) => self.ram[ra] = value,
-            BusTarget::PPU(ra) => ppu::write(self, ra as u8, value),
+            BusTarget::PPU(ra) => ppu::write(self, ra as u8, value)?,
             BusTarget::APU(ra) => apu::write(self, ra as u8, value),
             BusTarget::PRG => {
                 match &mut self.cart {
@@ -64,7 +64,7 @@ impl super::System {
                 // println!("Writing to OAM using DMA on bank {value:02x}");
                 assert_eq!(self.ppu.oam_addr, 0);
                 for lsb in 0..255 {
-                    self.oam[lsb] = self.read_byte(Addr::from_bytes(value, lsb as u8));
+                    self.oam[lsb] = self.read_byte(Addr::from_bytes(value, lsb as u8))?;
                 }
 
                 // self.dump_oam();
@@ -73,37 +73,39 @@ impl super::System {
                 self.cycles += 513;
             }
         }
+        Ok(())
     }
 
 
 
-    pub fn read_word<A: Into<Addr>>(&mut self, addr: A) -> u16 {
+    pub fn read_word<A: Into<Addr>>(&mut self, addr: A) -> anyhow::Result<u16> {
         let addr = addr.into();
-        let high = self.read_byte(addr + 1);
-        let low = self.read_byte(addr);
-        ((high as u16) << 8) | low as u16
+        let high = self.read_byte(addr + 1)?;
+        let low = self.read_byte(addr)?;
+        Ok(((high as u16) << 8) | low as u16)
     }
 
-    pub fn read_zero_word(&mut self, addr: u8) -> u16 {
-        let high = self.read_byte(Addr::from_zero(addr.wrapping_add(1)));
-        let low = self.read_byte(Addr::from_zero(addr));
-        ((high as u16) << 8) | low as u16
+    pub fn read_zero_word(&mut self, addr: u8) -> anyhow::Result<u16> {
+        let high = self.read_byte(Addr::from_zero(addr.wrapping_add(1)))?;
+        let low = self.read_byte(Addr::from_zero(addr))?;
+        Ok(((high as u16) << 8) | low as u16)
     }
 
-    pub fn write_word<A: Into<Addr>>(&mut self, addr: A, value: u16) {
+    pub fn write_word<A: Into<Addr>>(&mut self, addr: A, value: u16) -> anyhow::Result<()> {
         let addr = addr.into();
-        self.write_byte(addr, (value & 0xff) as u8);
-        self.write_byte(addr + 1, (value >> 8) as u8);
+        self.write_byte(addr, (value & 0xff) as u8)?;
+        self.write_byte(addr + 1, (value >> 8) as u8)?;
+        Ok(())
     }
 
     #[inline]
-    pub fn read_addr<A: Into<Addr>>(&mut self, addr: A) -> Addr {
-        Addr(self.read_word(addr))
+    pub fn read_addr<A: Into<Addr>>(&mut self, addr: A) -> anyhow::Result<Addr> {
+        Ok(Addr(self.read_word(addr)?))
     }
 
     #[inline]
-    pub fn read_zero_addr(&mut self, addr: u8) -> Addr {
-        Addr(self.read_zero_word(addr))
+    pub fn read_zero_addr(&mut self, addr: u8) -> anyhow::Result<Addr>  {
+        Ok(Addr(self.read_zero_word(addr)?))
     }
 
     pub fn map_addr(&self, addr: Addr) -> BusTarget {

@@ -59,21 +59,21 @@ pub(crate) enum OpCode {
 }
 
 impl OpCode {
-    pub fn execute(&self, sys: &mut System, address_mode: &AddressMode) -> u64 {
+    pub fn execute(&self, sys: &mut System, address_mode: &AddressMode) -> anyhow::Result<u64> {
 
         let cycles_start = sys.cycles;
         // sys.cpu.pc += 1i8;
 
         let cycles = match self {
             OpCode::Jump => {
-                let addr = get_addr_ro(sys, address_mode).addr;
+                let addr = get_addr_ro(sys, address_mode)?.addr;
                 sys.cpu.pc = addr; 
                 match address_mode { AddressMode::Indirect(_) => 5, _ => 3 }
             }
 
             OpCode::JumpSub => {
                 assert!(matches!(address_mode, AddressMode::Absolute(None)));
-                let addr = resolve_addr(sys, address_mode);
+                let addr = resolve_addr(sys, address_mode)?;
                 let pc = sys.cpu.pc - 1;
                 CPU::stack_push_word(sys, pc.into());
                 sys.cpu.pc = addr; 
@@ -82,7 +82,7 @@ impl OpCode {
 
             OpCode::BranchIf(flag, value) => {
                 assert!(matches!(address_mode, AddressMode::Relative));
-                let addr = addr_relative(sys);
+                let addr = addr_relative(sys)?;
                 if sys.cpu.get_flag(flag) == *value {
 
                     let old_pc = sys.cpu.pc;
@@ -93,18 +93,18 @@ impl OpCode {
             }
 
             OpCode::Load(target_reg) => {
-                let addr = resolve_addr(sys, address_mode);
-                let value = sys.read_byte(addr);
+                let addr = resolve_addr(sys, address_mode)?;
+                let value = sys.read_byte(addr)?;
                 sys.cpu.set_reg(target_reg, value);
                 sys.cpu.update_flags(value);
                 0
             }
 
             OpCode::Store(reg) => {
-                // let addr = resolve_addr(sys, address_mode);
-                let addr = resolve_addr_with_xp(sys, address_mode, true);
+                // let addr = resolve_addr(sys, address_mode)?;
+                let addr = resolve_addr_with_xp(sys, address_mode, true)?;
                 let value = sys.cpu.get_reg(reg);
-                sys.write_byte(addr, value);
+                sys.write_byte(addr, value)?;
                 0
             }
 
@@ -113,7 +113,7 @@ impl OpCode {
                     AddressMode::Implied => {2},
                     _ => {
                         // Dummy functions still need to push the PC
-                        let xp = get_addr_ro(sys, address_mode).crossed_page;
+                        let xp = get_addr_ro(sys, address_mode)?.crossed_page;
                         default_cycles(address_mode, xp)
                     }
                 }
@@ -132,8 +132,8 @@ impl OpCode {
             }
 
             OpCode::Bit => {
-                let addr = resolve_addr(sys, address_mode);
-                let value = sys.read_byte(addr);
+                let addr = resolve_addr(sys, address_mode)?;
+                let value = sys.read_byte(addr)?;
                 sys.cpu.zero = (sys.cpu.a & value) == 0;
                 sys.cpu.overflow = (value & 0b01000000) != 0;
                 sys.cpu.sign = (value & 0b10000000) != 0;
@@ -141,16 +141,16 @@ impl OpCode {
             }
 
             OpCode::ReturnSub => {
-                let pc = Addr(CPU::stack_pull_word(sys));
+                let pc = Addr(CPU::stack_pull_word(sys)?);
                 sys.cpu.pc = pc + 1;
                 6
             }
 
             OpCode::ReturnInt => {
                 
-                let flags = CPU::stack_pull_byte(sys);
+                let flags = CPU::stack_pull_byte(sys)?;
                 sys.cpu.set_status(flags);
-                let pc = CPU::stack_pull_word(sys).into();
+                let pc = CPU::stack_pull_word(sys)?.into();
                 sys.cpu.pc = pc;
                 6
             }
@@ -164,7 +164,7 @@ impl OpCode {
 
             
             OpCode::PullFlags => {
-                let flags = CPU::stack_pull_byte(sys);
+                let flags = CPU::stack_pull_byte(sys)?;
                 sys.cpu.set_status(flags);
                 4
             }
@@ -172,7 +172,7 @@ impl OpCode {
 
             OpCode::PullAcc => {
                 
-                let value = CPU::stack_pull_byte(sys);
+                let value = CPU::stack_pull_byte(sys)?;
                 sys.cpu.set_reg(&Register::A, value);
                 sys.cpu.update_flags(value);
                 4
@@ -184,17 +184,17 @@ impl OpCode {
             }
             
             OpCode::And => {
-                let addr = resolve_addr(sys, &address_mode);
-                sys.cpu.a &=  sys.read_byte(addr);
+                let addr = resolve_addr(sys, &address_mode)?;
+                sys.cpu.a &=  sys.read_byte(addr)?;
                 sys.cpu.update_flags(sys.cpu.a);
                 0
             }
 
             OpCode::Add => {
-                let addr = resolve_addr(sys, &address_mode);
+                let addr = resolve_addr(sys, &address_mode)?;
                 //let (value, carry) = sys.cpu.a.carrying_add(sys.read_byte(addr), sys.cpu.carry);
                 let ack_val = sys.cpu.a;// & 0b10000000;
-                let rhs_val = sys.read_byte(addr);
+                let rhs_val = sys.read_byte(addr)?;
                 
                 let carry = if sys.cpu.carry {1} else {0};
                 let sum = (ack_val as u16 + rhs_val as u16) + carry;
@@ -217,8 +217,8 @@ impl OpCode {
             }
             
             OpCode::Sub => {
-                let addr = resolve_addr(sys, &address_mode);
-                let sub = sys.read_byte(addr);
+                let addr = resolve_addr(sys, &address_mode)?;
+                let sub = sys.read_byte(addr)?;
                 let ack = sys.cpu.a;
 
                 cpu_sub(sys, sub, ack, sys.cpu.carry);
@@ -227,8 +227,8 @@ impl OpCode {
             }
                         
             OpCode::Or => {
-                let addr = resolve_addr(sys, &address_mode);
-                sys.cpu.a |=  sys.read_byte(addr);
+                let addr = resolve_addr(sys, &address_mode)?;
+                sys.cpu.a |=  sys.read_byte(addr)?;
                 sys.cpu.zero = sys.cpu.a == 0;
                 sys.cpu.sign = (sys.cpu.a & 0b10000000) != 0;
                 0
@@ -236,16 +236,16 @@ impl OpCode {
 
                         
             OpCode::ExOr => {
-                let addr = resolve_addr(sys, &address_mode);
-                sys.cpu.a ^=  sys.read_byte(addr);
+                let addr = resolve_addr(sys, &address_mode)?;
+                sys.cpu.a ^=  sys.read_byte(addr)?;
                 sys.cpu.zero = sys.cpu.a == 0;
                 sys.cpu.sign = (sys.cpu.a & 0b10000000) != 0;
                 0
             }
 
             OpCode::Compare(reg) => {
-                let addr = resolve_addr(sys, &address_mode);
-                let value_m = sys.read_byte(addr);
+                let addr = resolve_addr(sys, &address_mode)?;
+                let value_m = sys.read_byte(addr)?;
                 let value_r = sys.cpu.get_reg(reg);
                 sys.cpu.carry = value_r >= value_m;
                 let val = value_r.wrapping_sub(value_m);
@@ -264,9 +264,9 @@ impl OpCode {
             }
 
             OpCode::Inc(None) => {
-                let addr = resolve_addr_with_xp(sys, &address_mode, true);
-                let (value, _) = sys.read_byte(addr).overflowing_add(1);
-                sys.write_byte(addr, value);
+                let addr = resolve_addr_with_xp(sys, &address_mode, true)?;
+                let (value, _) = sys.read_byte(addr)?.overflowing_add(1);
+                sys.write_byte(addr, value)?;
                 sys.cpu.update_flags(value);
                 2
             }
@@ -279,8 +279,8 @@ impl OpCode {
             }
 
             OpCode::Dec(None) => {
-                let addr = resolve_addr_with_xp(sys, &address_mode, true);
-                let (value, _) = sys.read_byte(addr).overflowing_sub(1);
+                let addr = resolve_addr_with_xp(sys, &address_mode, true)?;
+                let (value, _) = sys.read_byte(addr)?.overflowing_sub(1);
                 sys.write_byte(addr, value);
                 sys.cpu.update_flags(value);
                 2
@@ -304,9 +304,9 @@ impl OpCode {
                         (value, carry)
                     },
                     _ => {
-                        let addr = resolve_addr_with_xp(sys, &address_mode, true);
-                        let (value, carry) = shift_right(sys.read_byte(addr));
-                        sys.write_byte(addr, value);
+                        let addr = resolve_addr_with_xp(sys, &address_mode, true)?;
+                        let (value, carry) = shift_right(sys.read_byte(addr)?);
+                        sys.write_byte(addr, value)?;
                         (value, carry)
                     }
                 };
@@ -323,9 +323,9 @@ impl OpCode {
                         (value, carry)
                     },
                     _ => {
-                        let addr = resolve_addr_with_xp(sys, &address_mode, true);
-                        let (value, carry) = shift_left(sys.read_byte(addr));
-                        sys.write_byte(addr, value);
+                        let addr = resolve_addr_with_xp(sys, &address_mode, true)?;
+                        let (value, carry) = shift_left(sys.read_byte(addr)?);
+                        sys.write_byte(addr, value)?;
                         (value, carry)
                     }
                 };
@@ -342,9 +342,9 @@ impl OpCode {
                         (value, carry)
                     },
                     _ => {
-                        let addr = resolve_addr_with_xp(sys, &address_mode, true);
-                        let (value, carry) = rot_right(sys.read_byte(addr), sys.cpu.carry);
-                        sys.write_byte(addr, value);
+                        let addr = resolve_addr_with_xp(sys, &address_mode, true)?;
+                        let (value, carry) = rot_right(sys.read_byte(addr)?, sys.cpu.carry);
+                        sys.write_byte(addr, value)?;
                         (value, carry)
                     }
                 };
@@ -361,9 +361,9 @@ impl OpCode {
                         (value, carry)
                     },
                     _ => {
-                        let addr = resolve_addr_with_xp(sys, &address_mode, true);
-                        let (value, carry) = rot_left(sys.read_byte(addr), sys.cpu.carry);
-                        sys.write_byte(addr, value);
+                        let addr = resolve_addr_with_xp(sys, &address_mode, true)?;
+                        let (value, carry) = rot_left(sys.read_byte(addr)?, sys.cpu.carry);
+                        sys.write_byte(addr, value)?;
                         (value, carry)
                     }
                 };
@@ -398,8 +398,8 @@ impl OpCode {
  
 
             OpCode::LoadHack(target_a, target_b) => {
-                let addr = resolve_addr(sys, address_mode);
-                let value = sys.read_byte(addr);
+                let addr = resolve_addr(sys, address_mode)?;
+                let value = sys.read_byte(addr)?;
                 sys.cpu.set_reg(target_a, value);
                 sys.cpu.set_reg(target_b, value);
                 sys.cpu.update_flags(value);
@@ -407,19 +407,19 @@ impl OpCode {
             }
 
             OpCode::StoreHack(source_a, source_b) => {
-                let addr = resolve_addr(sys, address_mode);
+                let addr = resolve_addr(sys, address_mode)?;
                 let value_a = sys.cpu.get_reg(source_a);
                 let value_b = sys.cpu.get_reg(source_b);
                 let value = value_a & value_b;
-                sys.write_byte(addr, value);
+                sys.write_byte(addr, value)?;
                 0 // TODO: ??
             }
 
             OpCode::DecCmpHack => {
                 let value_r = sys.cpu.a;
 
-                let addr = resolve_addr(sys, &address_mode);
-                let value_m = sys.read_byte(addr).wrapping_sub(1);
+                let addr = resolve_addr(sys, &address_mode)?;
+                let value_m = sys.read_byte(addr)?.wrapping_sub(1);
                 sys.cpu.carry = value_r >= value_m;
                 let val = value_r.wrapping_sub(value_m);
                 sys.cpu.update_flags(val);
@@ -434,10 +434,10 @@ impl OpCode {
 
                 let value_r = sys.cpu.a;
 
-                let addr = resolve_addr(sys, &address_mode);
-                let value_m = sys.read_byte(addr).wrapping_add(1);
+                let addr = resolve_addr(sys, &address_mode)?;
+                let value_m = sys.read_byte(addr)?.wrapping_add(1);
 
-                sys.write_byte(addr, value_m);
+                sys.write_byte(addr, value_m)?;
 
                 cpu_sub(sys, value_m, value_r, sys.cpu.carry);
 
@@ -446,11 +446,11 @@ impl OpCode {
 
             OpCode::ShiftLeftOrHack => {
                 // M = C <- [76543210] <- 0, A OR M -> A
-                let addr = resolve_addr(sys, &address_mode);
-                let value_m = sys.read_byte(addr);
+                let addr = resolve_addr(sys, &address_mode)?;
+                let value_m = sys.read_byte(addr)?;
                 let (shifted, carry) = shift_left(value_m);
                 sys.cpu.carry = carry;
-                sys.write_byte(addr, shifted);
+                sys.write_byte(addr, shifted)?;
                 sys.cpu.a |= shifted;
 
                 2
@@ -458,40 +458,34 @@ impl OpCode {
 
             OpCode::RotLeftAndHack => {
                 // M = C <- [76543210] <- C, A AND M -> A
-                let addr = resolve_addr(sys, &address_mode);
-                let value_m = sys.read_byte(addr);
+                let addr = resolve_addr(sys, &address_mode)?;
+                let value_m = sys.read_byte(addr)?;
                 let (value, carry) = rot_left(value_m, sys.cpu.carry);
                 sys.cpu.carry = carry;
                 sys.cpu.a &= value;
-                sys.write_byte(addr, value);
+                sys.write_byte(addr, value)?;
                 sys.cpu.update_flags(value);
                 2
             }
 
             OpCode::ShiftRightOrHack => {
                 // Lsr + Eor, M = 0 -> [76543210] -> C, A EOR M -> A
-                let addr = resolve_addr(sys, &address_mode);
-                let value_m = sys.read_byte(addr);
+                let addr = resolve_addr(sys, &address_mode)?;
+                let value_m = sys.read_byte(addr)?;
                 let (shifted, carry) = shift_right(value_m);
                 sys.cpu.carry = carry;
-                sys.write_byte(addr, shifted);
-
-                eprintln!("A: {:02x} {:08b}", sys.cpu.a, sys.cpu.a);
+                sys.write_byte(addr, shifted)?;
                 sys.cpu.a ^= shifted;
-
-                eprintln!("M: {value_m:02x} {value_m:08b}");
-                eprintln!("S: {shifted:02x} {shifted:08b}");
-                eprintln!("A: {:02x} {:08b}", sys.cpu.a, sys.cpu.a);
                 2
             }
 
             OpCode::RotRightAddHack => {
                 // Ror + Adc, M = C -> [76543210] -> C, A + M + C -> A, C
-                let addr = resolve_addr(sys, &address_mode);
-                let value_m = sys.read_byte(addr);
+                let addr = resolve_addr(sys, &address_mode)?;
+                let value_m = sys.read_byte(addr)?;
                 let (rhs_val, rot_carry) = rot_right(value_m, sys.cpu.carry);
                 // sys.cpu.carry = carry;
-                sys.write_byte(addr, rhs_val);
+                sys.write_byte(addr, rhs_val)?;
 
                 let ack_val = sys.cpu.a;
                 let carry = if rot_carry {1} else {0};
@@ -518,7 +512,7 @@ impl OpCode {
         };
 
         sys.cycles += cycles;
-        sys.cycles - cycles_start
+        Ok(sys.cycles - cycles_start)
     }
 }
 

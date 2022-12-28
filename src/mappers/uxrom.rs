@@ -43,7 +43,8 @@ impl UxROM {
 
 impl Mapper for UxROM {
     fn ppu_write(&mut self, addr: Addr, value: u8) -> anyhow::Result<()> {
-        todo!()
+        self.chr_ram[addr.0 as usize] = value;
+        Ok(())
     }
 
     fn cpu_write(&mut self, addr: Addr, value: u8) -> anyhow::Result<()> {
@@ -51,7 +52,7 @@ impl Mapper for UxROM {
             let banks = (self.prg_rom.len() / 0x4000) as u8;
             // assert!(value < banks, "Value {value} is larger than banks ({banks})");
             if value < banks {
-                eprintln!("CHR switched to bank {value:02x} ({value:08b})");
+                // eprintln!("CHR switched to bank {value:02x} ({value:08b})");
                 self.chr_bank = value;
             } else {eprintln!("Value {value} is larger than banks ({banks})");}
             

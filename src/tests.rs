@@ -144,7 +144,7 @@ fn run_with_expect_log(cart_file: &str, log_file: &str, start_pc: u16, steps: us
         }
         
 
-        let cpu_cycles = op.execute(&mut system, &am);
+        let cpu_cycles = op.execute(&mut system, &am)?;
         let ppu_cycles = cpu_cycles * 3;
         // println!("CPU: {cpu_cycles} => PPU: {ppu_cycles}");
 

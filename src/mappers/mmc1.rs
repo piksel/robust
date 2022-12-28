@@ -7,7 +7,6 @@ use super::Mapper;
 pub struct MMC1 {
     pub(crate) prg_rom: Vec<u8>,
     prg_ram: Vec<u8>,
-    #[allow(dead_code)]
     pub(crate) chr_rom: Vec<u8>,
     chr_bank0: u8,
     chr_bank1: u8,
@@ -34,7 +33,7 @@ impl MMC1 {
     }
 
     fn mirroring(&self) -> Mirroring {
-        match (self.control & 0b0011) {
+        match self.control & 0b0011 {
             0 => Mirroring::OneScreenLower,
             1 => Mirroring::OneScreenUpper,
             2 => Mirroring::Vertical,
@@ -53,7 +52,7 @@ impl MMC1 {
     }
 
     fn chr_dual_bank(&self) -> bool {
-        self.control & 0b0001_0000 != 0
+        (self.control & 0b0001_0000) != 0
     }
 }
 
@@ -88,14 +87,18 @@ impl Mapper for MMC1 {
                 3 => "PRG0",
                 _ => unreachable!()
             };
-            // eprintln!("Writing {value:05b} into register {reg_name} ({reg:02x})");
-            
+            //eprintln!("Writing {value:05b} into register {reg_name} ({reg:02x})");
+
             match reg {
                 0x80 => self.control = value,
                 0xa0 => self.chr_bank0 = value,
                 0xc0 => self.chr_bank1 = value,
                 0xe0 => self.prg_bank = value,
                 _ => unreachable!()
+            }
+
+            if ri == 0 {
+                eprintln!("Control ({:08b}) => DualCHRBank: {:?},  Mirroring: {:?},  FixedPRGBank: {:?}", self.control, self.chr_dual_bank(), self.mirroring(), self.prg_fixed_bank());
             }
             
             self.shift = 0b0010_0000;
@@ -108,7 +111,16 @@ impl Mapper for MMC1 {
     fn ppu_read(&self, addr: Addr) -> anyhow::Result<u8> {
  
         if self.chr_dual_bank() {
-            return Ok(self.chr_rom[(((self.chr_bank0 & 0b1111) as u16 * 0x1000) + addr.0) as usize]);
+            // eprintln!("DUAL READ!");
+            
+            let adjusted_addr = match self.mirroring() {
+                Mirroring::OneScreenLower => addr.0 % 0x1000,
+                Mirroring::OneScreenUpper => todo!(),
+                Mirroring::Vertical => todo!(),
+                Mirroring::Horizontal => todo!(),
+            };
+            let mapped_addr = (((self.chr_bank0 & 0b1111) as u16 * 0x1000) + adjusted_addr) as usize;
+            return Ok(self.chr_rom[mapped_addr]);
         }
 
         let bank = if addr < 0x1000 {
@@ -120,15 +132,17 @@ impl Mapper for MMC1 {
         // eprintln!("");
 
         let bank_offset = 0x1000 * (bank & 0b111);
-        let mapped_addr = ((addr.0 % 0x1000) + bank_offset) as usize;
-        // let adjusted_addr = match self.mirroring() {
-        //     Mirroring::OneScreenLower => todo!(),
-        //     Mirroring::OneScreenUpper => todo!(),
-        //     Mirroring::Vertical => todo!(),
-        //     Mirroring::Horizontal => todo!(),
-        // }
+        let mapped_addr = ((addr.0) + bank_offset) as usize;
+        let adjusted_addr = match self.mirroring() {
+            Mirroring::OneScreenLower => mapped_addr % 0x1000,
+            Mirroring::OneScreenUpper => todo!(),
+            Mirroring::Vertical => todo!(),
+            Mirroring::Horizontal => todo!(),
+        };
 
-        Ok(self.chr_rom[mapped_addr % self.chr_rom.len()])
+        // eprint!("{adjusted_addr:04x} ");
+
+        Ok(self.chr_rom[adjusted_addr % self.chr_rom.len()])
         
         // Ok(self.chr_rom[addr.0 as usize])
     }

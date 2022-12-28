@@ -82,7 +82,7 @@ impl CPU {
     pub fn stack_push_byte(sys: &mut System, value: u8) -> anyhow::Result<()> {
         // eprintln!("Pushing byte {value:02x} to stack at {:02x}", sys.cpu.sp);
         let addr = CPU::addr_stack(sys.cpu.sp);
-        sys.write_byte(addr, value);
+        sys.write_byte(addr, value)?;
         if let Some(sp) = sys.cpu.sp.checked_sub(1) {
             sys.cpu.sp = sp;
             Ok(())
@@ -91,23 +91,23 @@ impl CPU {
         }
     }
 
-    fn stack_pull_word(sys: &mut System) -> u16 {
+    fn stack_pull_word(sys: &mut System) -> anyhow::Result<u16> {
         sys.cpu.sp = sys.cpu.sp.checked_add(1).expect("stack overflow!");
         let addr = CPU::addr_stack(sys.cpu.sp);
-        let value = sys.read_word(addr);
+        let value = sys.read_word(addr)?;
         sys.cpu.sp = sys.cpu.sp.checked_add(1).expect("stack overflow!");
 
         // println!("{value:04x} read from stack at {addr:04x}");
-        value
+        Ok(value)
     }
 
     
-    fn stack_pull_byte(sys: &mut System) -> u8 {
+    fn stack_pull_byte(sys: &mut System) -> anyhow::Result<u8> {
         sys.cpu.sp = sys.cpu.sp.checked_add(1).expect("stack overflow!");
         let addr = CPU::addr_stack(sys.cpu.sp);
-        let value = sys.read_byte(addr);
+        let value = sys.read_byte(addr)?;
         // println!("{value:04x} read from stack at {addr:04x}");
-        value
+        Ok(value)
     }
 
     pub const STACK_BOT: Addr = Addr(0x0100);
@@ -185,26 +185,26 @@ mod tests {
     }
 }
 
-pub(crate) fn get_addr_ro(sys: &mut System, address_mode: &AddressMode) -> AddrLookup {
+pub(crate) fn get_addr_ro(sys: &mut System, address_mode: &AddressMode) -> anyhow::Result<AddrLookup> {
     match address_mode {
         AddressMode::Zero(reg) => addr_zero(sys, reg),
         AddressMode::Absolute(reg) => addr_absolute(sys, reg),
-        AddressMode::Immediate => addr_immediate(sys),
+        AddressMode::Immediate => Ok(addr_immediate(sys)),
         AddressMode::Indirect(reg) => addr_indirect(sys, reg),
         address_mode => panic!("getting address mode {address_mode:?} is not implemented")
     } 
 }
 
-pub(crate) fn resolve_addr(sys: &mut System, address_mode: &AddressMode) -> Addr {
-    let AddrLookup {addr, crossed_page} = get_addr_ro(sys, address_mode);
+pub(crate) fn resolve_addr(sys: &mut System, address_mode: &AddressMode) -> anyhow::Result<Addr> {
+    let AddrLookup {addr, crossed_page} = get_addr_ro(sys, address_mode)?;
     sys.cycles += default_cycles(address_mode, crossed_page);
-    addr
+    Ok(addr)
 }
 
-pub(crate) fn resolve_addr_with_xp(sys: &mut System, address_mode: &AddressMode, xp: bool) -> Addr {
-    let addr = get_addr_ro(sys, address_mode).addr;
+pub(crate) fn resolve_addr_with_xp(sys: &mut System, address_mode: &AddressMode, xp: bool) -> anyhow::Result<Addr> {
+    let addr = get_addr_ro(sys, address_mode)?.addr;
     sys.cycles += default_cycles(address_mode, xp);
-    addr
+    Ok(addr)
 }
 
 pub(crate) fn default_cycles(address_mode: &AddressMode, xp: bool) -> u64 {
@@ -228,14 +228,14 @@ pub(crate) fn addr_immediate(sys: &mut System) -> AddrLookup {
 
 }
 
-pub(crate) fn addr_zero(sys: &mut System, reg: &Option<Register>) -> AddrLookup {
+pub(crate) fn addr_zero(sys: &mut System, reg: &Option<Register>) -> anyhow::Result<AddrLookup> {
     let offset = match reg {
         None => 0,
         Some(r) => sys.cpu.get_reg(r)
     };
 
     // Zero-extended address
-    let base = shift_pc(sys);
+    let base = shift_pc(sys)?;
 
     let sum = base.wrapping_add(offset);
     // eprintln!("Base: {base:04x} offset: {offset:02x} sum:{sum:02x}");
@@ -244,45 +244,45 @@ pub(crate) fn addr_zero(sys: &mut System, reg: &Option<Register>) -> AddrLookup 
     // TODO
     let crossed_page = false;
 
-    AddrLookup { addr, crossed_page }
+    Ok(AddrLookup { addr, crossed_page })
     
     // sys.cpu.index_reg(base, reg)
 }
 
-pub(crate) fn addr_absolute(sys: &mut System, reg: &Option<Register>) -> AddrLookup {
-    let base = shift_pc_addr(sys);
+pub(crate) fn addr_absolute(sys: &mut System, reg: &Option<Register>) -> anyhow::Result<AddrLookup> {
+    let base = shift_pc_addr(sys)?;
     let addr = sys.cpu.index_reg(base, reg);
 
-    AddrLookup { addr, crossed_page: !addr.same_page_as(base) }
+    Ok(AddrLookup { addr, crossed_page: !addr.same_page_as(base) })
 }
 
-pub(crate) fn addr_indirect(sys: &mut System, reg: &Option<Register>) -> AddrLookup {
+pub(crate) fn addr_indirect(sys: &mut System, reg: &Option<Register>) -> anyhow::Result<AddrLookup> {
     match reg {
         None => {
-            let lsb_addr = shift_pc_addr(sys);
-            let addr_lsb = sys.read_byte(lsb_addr);
+            let lsb_addr = shift_pc_addr(sys)?;
+            let addr_lsb = sys.read_byte(lsb_addr)?;
 
             // This is a bug, but we will have to implement it as well
             let addr_msb = sys.read_byte(if lsb_addr.lsb() == 0xff{
                 lsb_addr - 0xff
             } else {
                 lsb_addr + 1
-            });
+            })?;
             let addr = Addr::from_bytes(addr_msb, addr_lsb);
             // let next_c = sys.read_byte(addr - 0xff);
             // eprintln!("addr1: {addr:04x} a: {next_a:02x} b: {next_b:02x} next: {next:04x}");
-            AddrLookup { addr, crossed_page: !addr.same_page_as(lsb_addr) }
+            Ok(AddrLookup { addr, crossed_page: !addr.same_page_as(lsb_addr) })
         },
         Some(Register::X) => {
-            let lsb_addr = shift_pc(sys);
+            let lsb_addr = shift_pc(sys)?;
             let msb_addr = sys.cpu.x;
             let meta_addr = lsb_addr.wrapping_add(msb_addr);
-            let addr = sys.read_zero_word(meta_addr).into();
-            AddrLookup{addr, crossed_page: false}
+            let addr = sys.read_zero_word(meta_addr)?.into();
+            Ok(AddrLookup{addr, crossed_page: false})
         }
         Some(Register::Y) => {
-            let lsb_addr = shift_pc(sys);
-            let addr_lsb = sys.read_zero_addr(lsb_addr); // FFFF
+            let lsb_addr = shift_pc(sys)?;
+            let addr_lsb = sys.read_zero_addr(lsb_addr)?; // FFFF
             
             let msb_addr = sys.cpu.y;
             
@@ -290,26 +290,26 @@ pub(crate) fn addr_indirect(sys: &mut System, reg: &Option<Register>) -> AddrLoo
             // eprintln!("addr1: {addr_lsb:04x} lsb: {lsb_addr:02x} msb: {msb_addr:02x} addr: {addr:04x}");
             let crossed_page = !addr.same_page_as(addr_lsb);
   
-            AddrLookup{addr, crossed_page}
+            Ok(AddrLookup{addr, crossed_page})
         }
-        Some(r) => panic!("cannot read indirect from register {r:?}")
+        Some(r) => anyhow::bail!("cannot read indirect from register {r:?}")
     }
 }
 
-pub fn addr_relative(sys: &mut System) -> i8 {
-    shift_pc(sys) as i8
+pub fn addr_relative(sys: &mut System) -> anyhow::Result<i8> {
+    Ok(shift_pc(sys)? as i8)
 }
 
-pub fn shift_pc(sys: &mut System) -> u8 {
-    let val = sys.read_byte(sys.cpu.pc);
+pub fn shift_pc(sys: &mut System) -> anyhow::Result<u8> {
+    let val = sys.read_byte(sys.cpu.pc)?;
     sys.cpu.pc += 1i8;
-    val
+    Ok(val)
 }
 
-pub fn shift_pc_addr(sys: &mut System) -> Addr {
-    let lsb = shift_pc(sys);
-    let msb = shift_pc(sys);
-    Addr::from_bytes(msb, lsb)
+pub fn shift_pc_addr(sys: &mut System) -> anyhow::Result<Addr> {
+    let lsb = shift_pc(sys)?;
+    let msb = shift_pc(sys)?;
+    Ok(Addr::from_bytes(msb, lsb))
 }
 
 pub(crate) struct AddrLookup {

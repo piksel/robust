@@ -3,7 +3,7 @@ use crate::system::cpu::{self, opcode::OpCode, AddressMode, Flag, Register};
 
 
 pub(crate) fn load(sys: &mut System) -> anyhow::Result<(OpCode, AddressMode)> {
-    match cpu::shift_pc(sys) {
+    match cpu::shift_pc(sys)? {
         
         // JMP
         0x4c => Ok((OpCode::Jump, AddressMode::Absolute(None))),

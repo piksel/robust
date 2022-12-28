@@ -47,11 +47,13 @@ impl Mapper for NROM {
     }
 
     fn ppu_read(&self, addr: Addr) -> anyhow::Result<u8> {
-        if self.chr_rom.len() == 0 {
-            Ok(self.chr_ram[addr.0 as usize])
-        } else {
-            Ok(self.chr_rom[addr.0 as usize])
-        }
+        // if self.chr_rom.len() == 0 {
+        //     Ok(self.chr_ram[addr.0 as usize])
+        // } else {
+        let val = self.chr_rom.get(addr.0 as usize).ok_or_else(|| anyhow::format_err!("could not read CHR address {addr}")).copied();
+        Ok(val.unwrap())
+
+        // }
     }
 
     fn cpu_read(&self, addr: Addr) -> anyhow::Result<u8> {
