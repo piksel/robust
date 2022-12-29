@@ -61,17 +61,11 @@ fn main() -> Result<()> {
 
     window.set_background_color(0x17, 0x05, 0x30);
 
-
-
     let mut debug_opts = DebugOps::new();
 
     debug_opts.update_menu(&mut window);
 
-
-    let font = Font::from_bytes(*include_bytes!("../../fonts/PixelOperatorMonoHB.bmf"), 10, 18);
-
-    // Limit to max ~60 fps update rate
-    // window.limit_update_rate(Some(std::time::Duration::from_micros(16600)));
+    let font = Font::try_from_bytes(*include_bytes!("../../fonts/PixelOperatorMonoHB.bmf"))?;
 
     let logo_x = 0;
     let logo_y = 128;
@@ -95,18 +89,14 @@ fn main() -> Result<()> {
 
     eprintln!();
     eprintln!("Starting execution...");
-
-    
-    // let a1 = args.next();
     eprintln!("");
 
     // for _ in 0..100 {
     //     window.update();
-
     // }
 
-    // Limit to max ~60 fps update rate
-    window.limit_update_rate(Some(std::time::Duration::from_micros(16600)));
+    // Limit to max ~30 fps update rate (NTSC)
+    window.limit_update_rate(Some(std::time::Duration::from_micros(8300)));
 
     let mut last_frame = std::time::Instant::now();
 
@@ -148,6 +138,7 @@ fn main() -> Result<()> {
             })?;
 
 
+            // Draw upscaled frame to allow "gui" elements in double the resolution
             for (y, row) in system.get_frame().iter().enumerate() {
                 for (x, val) in row.iter().enumerate() {
 
@@ -156,18 +147,10 @@ fn main() -> Result<()> {
                             
                             let buf_y = ((y * SCALE) + by) * WIDTH;
                             let buf_x = (x * SCALE) + bx;
-
-                            // eprintln!("x: {bx} y: {by} => x: {buf_x} y: {buf_y} ({y})");
-
                             screen.buffer[buf_y + buf_x] = *val;
                         }
                     }
-    
-
-                    
                 }
-                // panic!("whoa");
-                // break;
             }
 
             Some(last_state)

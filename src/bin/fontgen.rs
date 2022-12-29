@@ -2,7 +2,7 @@
 use image::{RgbaImage, Rgba};
 use imageproc::{drawing::{self, text_size, draw_text_mut, Canvas}, rect::Rect};
 use rusttype::{Font, Scale};
-use robust::clapx::ensure_existing_file;
+use robust::{clapx::ensure_existing_file, font::{BitmapFontHeader, ColorMode}};
 use std::{path::PathBuf};
 use std::fs;
 
@@ -162,16 +162,23 @@ fn main() -> anyhow::Result<()> {
 
     let output_path = args.output_bitmap.unwrap_or_else(|| args.source_font.with_extension("bmf"));
 
-    
+    let header = BitmapFontHeader{
+        version: 1,
+        width: char_width as u8,
+        height: char_height as u8,
+        outline: 1,
+        color_mode: ColorMode::Outlined,
+    };
+
     // let output_file = File::create(output_path)?;
-    let output_buf: Vec<u8> = image.pixels().map(|p| {
+    let output_buf = image.pixels().map(|p| {
         // If alpha is less than 50%, pixel is transparent
         if p.0[3] < 0x80 {0} else {
             let mono = (p.0[0] as u16 + p.0[1] as u16 + p.0[2] as u16) / 3;
             if mono >= 0xff {0xffu8} else {(mono + 1)  as u8}
         }
-    }).collect();
-    fs::write(output_path, output_buf).unwrap();
+    });
+    fs::write(output_path, header.into_iter().chain(output_buf).collect::<Vec<u8>>()).unwrap();
 
     let preview_path = args.output_preview.unwrap_or_else(|| args.source_font.with_extension("png"));
 
