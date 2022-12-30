@@ -1,3 +1,5 @@
+use crate::system::addr::Addr;
+
 use super::System;
 use draw::draw;
 use registers::{Control, Status, Mask};
@@ -35,6 +37,8 @@ pub struct PPU {
     pub palette: [u8; 32],
     pub bg_patterns: [u16; 2],
     pub bg_palettes: [u8; 2],
+
+    pub sprite_outputs: Vec<[u8; 5]>,
 }
 
 impl PPU {
@@ -68,6 +72,7 @@ impl PPU {
             bg_patterns: [0; 2],
             bg_palettes: [0; 2],
 
+            sprite_outputs: Vec::with_capacity(8)
         }
     }
 
@@ -96,7 +101,8 @@ pub(crate) fn tick(sys: &mut System) -> anyhow::Result<()> {
     // dot 1
     if col == 0 {
         if row == PRE_RENDER_LINE {
-
+            sys.ppu.status.sprite_zero_hit = false;
+            sys.ppu.status.vertical_blank = false;
         }
 
         if row == POST_RENDER_LINE + 1{
@@ -112,10 +118,9 @@ pub(crate) fn tick(sys: &mut System) -> anyhow::Result<()> {
 
 
     if row <= 239 {
-        if col >= 4 && col < 260 {
-            draw(sys, col as usize - 4, row as usize)?;
-
-        } else if col > 260 {
+        if col >= 1 && col < 257 {
+            draw(sys, col as usize - 1, row as usize)?;
+        } else if col == 257 {
             // eprintln!();
         }
     }
@@ -174,6 +179,9 @@ pub(crate) fn write(sys: &mut System, address: u8, value: u8) -> anyhow::Result<
                 sys.cart.as_mut().unwrap().mapper.ppu_write(sys.ppu.addr.into(), value)?;
                 // sys.ppu.vram[sys.ppu.addr as usize] = value;
             } else if sys.ppu.addr < 0x3000 {
+                if sys.ppu.addr == 0x27a0 {
+                    println!("Writing {value:02x} to {}!", Addr(sys.ppu.addr));
+                }
                 let addr = mirrored_addr(sys, sys.ppu.addr - 0x2000);
 
                 sys.ppu.vram[addr as usize] = value;
@@ -205,8 +213,8 @@ fn bump_addr(sys: &mut System) {
 
 fn mirrored_addr(sys: &System, base: u16) -> u16 {
     let vertical_mirroring = sys.cart.as_ref().unwrap().header.vertical_mirroring;
-
     if vertical_mirroring {
+        // eprintln!("Writing to {:04x} wrapped from {:04x}", base % 0x800, base);
         base % 0x800
     } else {
         if base < 0x800 {

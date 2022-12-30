@@ -4,8 +4,13 @@
         "curr",
         "minifb",
         "nestest",
+        "NROM",
         "OAMDMA",
+        "playchoice",
         "regs",
+        "Unisystem",
+        "upscaled",
+        "uxrom",
         "vram"
     ],
     "sarif-viewer.connectToGithubCodeScanning": "off"

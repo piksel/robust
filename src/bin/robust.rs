@@ -114,6 +114,17 @@ fn main() -> Result<()> {
             debug_opts.toggle(DebugOps::SHOW_TEST_REGS);
         }
 
+        if window.is_key_down(Key::F1) {
+            system.offset -= 1;
+            eprintln!("Offset decreased to {}", system.offset);
+        }
+
+        if window.is_key_down(Key::F2) {
+            system.offset += 1;
+            eprintln!("Offset increased to {}", system.offset);
+        }
+
+
         debug_opts.update_menu(&mut window);
 
         let last_state = if system.has_cartridge() {

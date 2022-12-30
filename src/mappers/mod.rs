@@ -1,3 +1,5 @@
+use std::{fmt::Display};
+
 use crate::system::{addr::Addr, cart::Header};
 
 
@@ -9,7 +11,7 @@ pub use mmc1::MMC1;
 pub use nrom::NROM;
 pub use uxrom::UxROM;
 
-pub trait Mapper {
+pub trait Mapper where Self: Display {
     fn ppu_write(&mut self, addr: Addr, value: u8) -> anyhow::Result<()>;
     fn cpu_write(&mut self, addr: Addr, value: u8) -> anyhow::Result<()>;
 

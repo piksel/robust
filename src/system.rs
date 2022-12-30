@@ -29,6 +29,7 @@ pub struct System {
     pub(crate) nmi: bool,
     history: Vec<ExecutionState>,
     history_pos: usize,
+    pub offset: usize,
 }
 
 impl System {
@@ -47,6 +48,7 @@ impl System {
             nmi: false,
             history: Vec::new(),
             history_pos,
+            offset: 1016,
         }
     }
 
@@ -338,6 +340,6 @@ pub fn dump_mem<'a, T>(source: T, curr_address: Option<addr::Addr>) -> Result<()
             chars = ['.'; 16];
         }
     }
-
+    stderr.set_color(&ColorSpec::new())?;
     Ok(())
 }
