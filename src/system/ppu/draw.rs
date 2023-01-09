@@ -187,7 +187,7 @@ pub fn draw(sys: &mut System, nx: usize, ny: usize) -> anyhow::Result<()> {
             _ => 0x00ff00,
         }
     } else {
-        PPU::palette_colors[palette_col as usize]
+        PPU::PALETTE_COLORS[palette_col as usize]
     };
 
     

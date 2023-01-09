@@ -1,6 +1,6 @@
 use crate::{system::{System, addr::Addr}};
 
-use crate::system::cpu::{self, AddressMode, Register, CPU, addr_relative, Flag, resolve_addr, get_addr_ro};
+use crate::system::cpu::{AddressMode, Register, CPU, addr_relative, Flag, resolve_addr, get_addr_ro};
 
 use super::{resolve_addr_with_xp, default_cycles};
 
@@ -9,7 +9,6 @@ use super::{resolve_addr_with_xp, default_cycles};
 #[derive(Debug)]
 pub(crate) enum OpCode {
     Break,
-    Kill,
     NoOp,
 
     // Logical operators
@@ -75,7 +74,7 @@ impl OpCode {
                 assert!(matches!(address_mode, AddressMode::Absolute(None)));
                 let addr = resolve_addr(sys, address_mode)?;
                 let pc = sys.cpu.pc - 1;
-                CPU::stack_push_word(sys, pc.into());
+                CPU::stack_push_word(sys, pc.into())?;
                 sys.cpu.pc = addr; 
                 2
             }
@@ -158,7 +157,7 @@ impl OpCode {
             OpCode::PushFlags => {
                 let flags = sys.cpu.status();
                 // Always push the status with B bit set to the stack
-                CPU::stack_push_byte(sys, flags | (1u8 << 4));
+                CPU::stack_push_byte(sys, flags | (1u8 << 4))?;
                 3
             }
 
@@ -179,7 +178,7 @@ impl OpCode {
             }
 
             OpCode::PushAcc => {
-                CPU::stack_push_byte(sys, sys.cpu.a);
+                CPU::stack_push_byte(sys, sys.cpu.a)?;
                 3
             }
             
@@ -281,7 +280,7 @@ impl OpCode {
             OpCode::Dec(None) => {
                 let addr = resolve_addr_with_xp(sys, &address_mode, true)?;
                 let (value, _) = sys.read_byte(addr)?.overflowing_sub(1);
-                sys.write_byte(addr, value);
+                sys.write_byte(addr, value)?;
                 sys.cpu.update_flags(value);
                 2
             }
@@ -373,8 +372,8 @@ impl OpCode {
             }
 
             OpCode::Break => {
-                CPU::stack_push_word(sys, sys.cpu.pc.into());
-                CPU::stack_push_byte(sys, sys.cpu.status());
+                CPU::stack_push_word(sys, sys.cpu.pc.into())?;
+                CPU::stack_push_byte(sys, sys.cpu.status())?;
                 
                 sys.cpu.pc = CPU::ADDR_BREAK;
                 sys.cpu.soft_break = true;
@@ -424,7 +423,7 @@ impl OpCode {
                 let val = value_r.wrapping_sub(value_m);
                 sys.cpu.update_flags(val);
                 sys.cpu.zero = value_r == value_m;
-                sys.write_byte(addr, value_m);
+                sys.write_byte(addr, value_m)?;
 
                 2
             }
@@ -508,7 +507,7 @@ impl OpCode {
                 2
             }
 
-            op => panic!("opcode {op:?} is not implemented")
+            // op => panic!("opcode {op:?} is not implemented")
         };
 
         sys.cycles += cycles;

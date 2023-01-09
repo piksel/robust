@@ -57,7 +57,7 @@ impl MMC1 {
 }
 
 impl Mapper for MMC1 {
-    fn ppu_write(&mut self, addr: Addr, value: u8) -> anyhow::Result<()> {
+    fn ppu_write(&mut self, _addr: Addr, _value: u8) -> anyhow::Result<()> {
         todo!()
     }
 
@@ -80,13 +80,13 @@ impl Mapper for MMC1 {
             let reg = 0b1110_0000 & (addr.0 >> 8) as u8;
             let value = (self.shift >> 3) & 0b0001_1111;
             let ri = (reg >> 5) & 0b11;
-            let reg_name = match ri {
-                0 => "CTRL",
-                1 => "CHR0",
-                2 => "CHR1",
-                3 => "PRG0",
-                _ => unreachable!()
-            };
+            // let reg_name = match ri {
+            //     0 => "CTRL",
+            //     1 => "CHR0",
+            //     2 => "CHR1",
+            //     3 => "PRG0",
+            //     _ => unreachable!()
+            // };
             //eprintln!("Writing {value:05b} into register {reg_name} ({reg:02x})");
 
             match reg {
@@ -173,7 +173,7 @@ impl Mapper for MMC1 {
                 PrgFixedBank::None => (self.prg_bank + 1) as usize * 0x4000,
             };
             let rom_addr = bank_offset + (addr.0 as usize - 0xc000);
-            let rom_addr2 = rom_addr % self.prg_rom.len();
+            // let rom_addr2 = rom_addr % self.prg_rom.len();
             // println!("Reading from {addr} => bank ({:?}, {}) offset {bank_offset:04x} => {rom_addr:04x} => {rom_addr2:04x}", self.prg_fixed_bank(), self.prg_bank);
             Ok(self.prg_rom[rom_addr % self.prg_rom.len()])
         }

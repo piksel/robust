@@ -74,7 +74,7 @@ impl Mapper for UxROM {
             // switchable bank
             let bank_offset = self.chr_bank as usize * 0x4000;
             let rom_addr = bank_offset + (addr.0 as usize - 0x8000);
-            let rom_addr2 = rom_addr % self.prg_rom.len();
+            // let rom_addr2 = rom_addr % self.prg_rom.len();
             // println!("Reading from {addr:08x} => bank offset {last_bank:04x} => {rom_addr:04x} => {rom_addr2:04x}");
             Ok(self.prg_rom[rom_addr % self.prg_rom.len()])
         } else {
@@ -82,7 +82,7 @@ impl Mapper for UxROM {
             
             let last_bank = self.prg_rom.len() - 0x4000;
             let rom_addr = last_bank + (addr.0 as usize - 0xc000);
-            let rom_addr2 = rom_addr % self.prg_rom.len();
+            // let rom_addr2 = rom_addr % self.prg_rom.len();
             // println!("Reading from {addr:08x} => bank offset {last_bank:04x} => {rom_addr:04x} => {rom_addr2:04x}");
             Ok(self.prg_rom[rom_addr % self.prg_rom.len()])
         }

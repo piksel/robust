@@ -3,9 +3,9 @@
 use core::panic;
 
 use anyhow::{Result, format_err, bail};
-use std::{io::{Write, Cursor, Read}, fmt::Display};
+use std::{io::{Write, Cursor, Read}};
 use crate::mappers::{self, Mapper};
-use termcolor::{WriteColor, ColorSpec, Color, StandardStream};
+use termcolor::{WriteColor, ColorSpec, Color, BufferWriter, Buffer};
 use super::addr::Addr;
 
 #[allow(dead_code)]
@@ -26,14 +26,24 @@ impl Cart {
     const EMPTY_CART: &[u8] = include_bytes!("../../empty/empty.nes");
 
     pub(crate) fn empty() -> Result<Self> {
-        let mut cart = Self::new(Cursor::new(Self::EMPTY_CART).bytes())?;
-        cart.is_empty = true;
+        let mut dummy = Buffer::ansi();
+        let cart = Self::init(Cursor::new(Self::EMPTY_CART).bytes(), true, &mut dummy)?;
         Ok(cart)
     }
 
     pub(crate) fn new<B: IntoIterator<Item=ByteResult>>(bytes: B) -> Result<Self> {
+        
+        let stderr = BufferWriter::stderr(termcolor::ColorChoice::Auto);
+        let mut buffer = stderr.buffer();
+        let cart = Self::init(bytes, false, &mut buffer)?;
+        buffer.flush()?;
+        stderr.print(&buffer)?;
+        Ok(cart)
+    }
+
+    pub(crate) fn init<B: IntoIterator<Item=ByteResult>>(bytes: B, is_empty: bool, log: &mut Buffer) -> Result<Self> {
         let mut head = bytes.into_iter();
-        let header = Header::from_bytes(head.by_ref().take(16))?;
+        let header = Header::from_bytes(head.by_ref().take(16), log)?;
 
         let prg_rom = head.by_ref().take(header.prg_rom_size).collect::<IOResult<Vec<u8>>>()?;
         let chr_rom = if header.chr_rom_size == 0 {
@@ -43,14 +53,14 @@ impl Cart {
         };
 
         let mapper = mappers::new(&header, prg_rom, chr_rom)?;
-        let mut stderr = StandardStream::stderr(termcolor::ColorChoice::Auto);
-        log_var(&mut stderr, "Mapper", &mapper, ColorSpec::new().set_bold(true).set_fg(Some(Color::Magenta)));
+
+        log_var(log, "Mapper", &mapper, ColorSpec::new().set_bold(true).set_fg(Some(Color::Magenta)));
 
 
         Ok(Cart{
             header,
             mapper,
-            is_empty: false,
+            is_empty,
         })
     }
 
@@ -101,7 +111,7 @@ struct NES2Header {
 
 }
 
-fn log_var(stream: &mut StandardStream, key: &str, val: impl std::fmt::Display, spec: &ColorSpec){
+fn log_var(stream:&mut Buffer, key: &str, val: impl std::fmt::Display, spec: &ColorSpec){
     let reset = ColorSpec::new();
     let _ = stream.set_color(&reset);
     let _ = write!(stream, "{key}: ");
@@ -110,7 +120,7 @@ fn log_var(stream: &mut StandardStream, key: &str, val: impl std::fmt::Display, 
     let _ = stream.set_color(&reset);
 }
 
-fn log_bool(stream: &mut StandardStream, key: &str, val: bool, spec_true: &ColorSpec, spec_false: &ColorSpec){
+fn log_bool(stream: &mut Buffer, key: &str, val: bool, spec_true: &ColorSpec, spec_false: &ColorSpec){
     if val {
         log_var(stream, key, "yes", spec_true);
     } else {
@@ -118,7 +128,7 @@ fn log_bool(stream: &mut StandardStream, key: &str, val: bool, spec_true: &Color
     }
 }
 
-fn log_flags(stream: &mut StandardStream, key: &str, val: u8, shorts: &str, spec_true: &ColorSpec, spec_false: &ColorSpec){
+fn log_flags(stream:&mut Buffer, key: &str, val: u8, shorts: &str, spec_true: &ColorSpec, spec_false: &ColorSpec){
     let reset = ColorSpec::new();
     let _ = stream.set_color(&reset);
     let _ = write!(stream, "{key}: ");
@@ -131,10 +141,9 @@ fn log_flags(stream: &mut StandardStream, key: &str, val: u8, shorts: &str, spec
 }
 
 impl Header {
-    pub fn from_bytes<B>(mut bytes: B) -> Result<Self> where
+    pub fn from_bytes<B>(mut bytes: B, log: &mut Buffer) -> Result<Self> where
         B: Iterator<Item = ByteResult>
     {
-        let mut stderr = StandardStream::stderr(termcolor::ColorChoice::Auto);
         let col_enum = ColorSpec::new().set_bold(true).set_fg(Some(Color::Magenta)).to_owned();
         let col_true = ColorSpec::new().set_bold(true).set_fg(Some(Color::Green)).to_owned();
         let col_false = ColorSpec::new().set_bold(true).set_fg(Some(Color::Red)).to_owned();
@@ -157,34 +166,34 @@ impl Header {
         let prg_rom_size_raw = bytes.next().ok_or_else(too_short_err)??;
         let chr_rom_size_raw = bytes.next().ok_or_else(too_short_err)??;
 
-        log_var(&mut stderr, "PRG ROM size", format!("{prg_rom_size_raw}"), &col_number);
-        log_var(&mut stderr, "CHR ROM size", format!("{chr_rom_size_raw}"), &col_number);
+        log_var(log, "PRG ROM size", format!("{prg_rom_size_raw}"), &col_number);
+        log_var(log, "CHR ROM size", format!("{chr_rom_size_raw}"), &col_number);
 
         let flags6 = bytes.next().ok_or_else(too_short_err)??;
 
-        log_flags(&mut stderr, "Byte 6 Flags",  flags6, "VBTDLLLL", &col_true, &col_false);
+        log_flags(log, "Byte 6 Flags",  flags6, "VBTDLLLL", &col_true, &col_false);
 
         let vertical_mirroring = flags6 & 0b0001 != 0;
         let battery_ram        = flags6 & 0b0010 != 0;
         let trainer            = flags6 & 0b0100 != 0;
         let no_mirror          = flags6 & 0b1000 != 0;
 
-        log_bool(&mut stderr, " => Vertical mirroring", vertical_mirroring, &col_true, &col_false);
-        log_bool(&mut stderr, " => Battery RAM", battery_ram, &col_true, &col_false);
-        log_bool(&mut stderr, " => Trainer", trainer, &col_true, &col_false);
-        log_bool(&mut stderr, " => Disable mirroring", no_mirror, &col_true, &col_false);
+        log_bool(log, " => Vertical mirroring", vertical_mirroring, &col_true, &col_false);
+        log_bool(log, " => Battery RAM", battery_ram, &col_true, &col_false);
+        log_bool(log, " => Trainer", trainer, &col_true, &col_false);
+        log_bool(log, " => Disable mirroring", no_mirror, &col_true, &col_false);
 
         let flags7 = bytes.next().ok_or_else(too_short_err)??;
 
-        log_flags(&mut stderr, "Byte 7 Flags",  flags7, "VPNNUUUU", &col_true, &col_false);
+        log_flags(log, "Byte 7 Flags",  flags7, "VPNNUUUU", &col_true, &col_false);
 
         let vs_unisystem = flags7 & 0b0001 != 0;
         let playchoice10 = flags7 & 0b0010 != 0;
         let nes2_format  = flags7 & 0b1100 == 0b1100;
 
-        log_bool(&mut stderr, " => VS Unisystem", vs_unisystem, &col_true, &col_false);
-        log_bool(&mut stderr, " => PlayChoice 10", playchoice10, &col_true, &col_false);
-        log_bool(&mut stderr, " => NES 2.0 format", nes2_format, &col_true, &col_false);
+        log_bool(log, " => VS Unisystem", vs_unisystem, &col_true, &col_false);
+        log_bool(log, " => PlayChoice 10", playchoice10, &col_true, &col_false);
+        log_bool(log, " => NES 2.0 format", nes2_format, &col_true, &col_false);
         
         eprintln!();
 
@@ -194,7 +203,7 @@ impl Header {
             panic!("not implemented")
 
         } else {
-            log_var(&mut stderr, "Header format",  "iNES", &col_enum);
+            log_var(log, "Header format",  "iNES", &col_enum);
 
             let prg_rom_size = (prg_rom_size_raw as usize) * 16384;
             let chr_rom_size = (chr_rom_size_raw as usize) * 8192;
@@ -203,9 +212,9 @@ impl Header {
             let prg_ram_size = (if flags8 == 0 {1u16} else {flags8 as u16}) * 8192;
             
 
-            log_var(&mut stderr, "PRG ROM bytes", prg_rom_size, &col_number);
-            log_var(&mut stderr, "CHR ROM bytes", chr_rom_size, &col_number);
-            log_var(&mut stderr, "PRG RAM bytes", prg_ram_size, &col_number);
+            log_var(log, "PRG ROM bytes", prg_rom_size, &col_number);
+            log_var(log, "CHR ROM bytes", chr_rom_size, &col_number);
+            log_var(log, "PRG RAM bytes", prg_ram_size, &col_number);
             // eprintln!("PRG_ROM: {prg_rom_size} byte(s) ({prg_rom_size:08x})");
             // eprintln!("CHR_ROM: {chr_rom_size} byte(s) ({chr_rom_size:08x})");
 
@@ -213,23 +222,23 @@ impl Header {
             #[allow(unused_variables)]
             {
                 let flags9 = bytes.next().ok_or_else(too_short_err)??;
-                log_flags(&mut stderr, "Byte 9 Flags",  flags9, "T???????", &col_true, &col_false);
-                log_var(&mut stderr, " => TV System", if flags9&1!=0 {"PAL"}else{"NTSC"}, &col_enum);
+                log_flags(log, "Byte 9 Flags",  flags9, "T???????", &col_true, &col_false);
+                log_var(log, " => TV System", if flags9&1!=0 {"PAL"}else{"NTSC"}, &col_enum);
                 let flags10 = bytes.next().ok_or_else(too_short_err)??;
-                log_flags(&mut stderr, "Byte 10 Flags",  flags10, "SS??PB??", &col_true, &col_false);
-                log_var(&mut stderr, " => TV System", match flags10&0b11 {
+                log_flags(log, "Byte 10 Flags",  flags10, "SS??PB??", &col_true, &col_false);
+                log_var(log, " => TV System", match flags10&0b11 {
                     0 => "NTSC",
                     2 => "PAL",
                     _ => "Dual",
                 }, &col_enum);
-                log_bool(&mut stderr, " => PRG RAM", flags10&0b0001_0000!=0, &col_true, &col_false);
-                log_bool(&mut stderr, " => Bus conflicts", flags10&0b0010_0000!=0, &col_true, &col_false);
+                log_bool(log, " => PRG RAM", flags10&0b0001_0000!=0, &col_true, &col_false);
+                log_bool(log, " => Bus conflicts", flags10&0b0010_0000!=0, &col_true, &col_false);
             }
 
             let mapper_id = (flags6 as u16 & 0xf0) >> 4 | (flags7 as u16 & 0xf0);
 
-            log_var(&mut stderr, "Mapper ID",  format!("{mapper_id}"), &col_number);
-            log_var(&mut stderr, "Mapper bits",  format!("{mapper_id:08b}"), &col_number);
+            log_var(log, "Mapper ID",  format!("{mapper_id}"), &col_number);
+            log_var(log, "Mapper bits",  format!("{mapper_id:08b}"), &col_number);
     
             // Unused
             let _ = bytes.by_ref().take(5).collect::<IOResult<Vec<u8>>>()?;

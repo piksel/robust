@@ -1,10 +1,3 @@
-// const WIDTH: usize = 512;
-// const HEIGHT: usize = 480;
-// const CHAR_HEIGHT: usize = 18;
-// const CHAR_WIDTH: usize = 10;
-
-use std::vec::IntoIter;
-
 use anyhow::bail;
 
 pub struct Font {

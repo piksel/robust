@@ -10,7 +10,9 @@ pub struct NROM {
     prg_ram: Vec<u8>,
     #[allow(dead_code)]
     pub(crate) chr_rom: Vec<u8>,
+    #[allow(dead_code)]
     pub(crate) chr_ram: Vec<u8>,
+    #[allow(dead_code)]
     chr_bank: u8,
 }
 impl NROM {
@@ -38,7 +40,7 @@ impl NROM {
 }
 
 impl Mapper for NROM {
-    fn ppu_write(&mut self, addr: Addr, value: u8) -> anyhow::Result<()> {
+    fn ppu_write(&mut self, _addr: Addr, _value: u8) -> anyhow::Result<()> {
         todo!()
     }
 
