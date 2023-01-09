@@ -1,6 +1,5 @@
-use std::{path::PathBuf, ffi::OsStr};
+use std::{path::PathBuf};
 
-use clap::builder::{PathBufValueParser, TypedValueParser, IntoResettable, ValueParser};
 use minifb::Scale;
 
 // pub static existing_file: Box<dyn TypedValueParser<Value = PathBuf> + Send + Sync> = Box::new(PathBufValueParser::new().try_map(ensure_existing_file));

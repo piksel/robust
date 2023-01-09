@@ -1,6 +1,6 @@
 use anyhow::{bail, Result};
 use termcolor::{BufferWriter, ColorSpec, Color, ColorChoice, WriteColor};
-use std::{fs, io::{self, Write as IOWrite, BufRead}, fmt::{self, Write}};
+use std::{fs, io::{self, Write as IOWrite, BufRead}};
 
 type ParseIntResult<T> = std::result::Result<T, std::num::ParseIntError>;
 
@@ -20,7 +20,7 @@ fn matches_nestest() {
 fn run_with_expect_log(cart_file: &str, log_file: &str, start_pc: u16, steps: usize) -> Result<()> {
     let mut system = system::System::new(Options{
        ..Default::default()
-    });
+    })?;
 
     let cart_file = fs::File::open(cart_file)?;
     let log_file = fs::File::open(log_file)?;
@@ -46,8 +46,6 @@ fn run_with_expect_log(cart_file: &str, log_file: &str, start_pc: u16, steps: us
 
     // init program counter (for use with test cart)
     system.cpu.pc = Addr(start_pc);
-
-    let mut cycles = 0u64;
 
     for step in 0..steps {
 
@@ -131,31 +129,18 @@ fn run_with_expect_log(cart_file: &str, log_file: &str, start_pc: u16, steps: us
             stderr.print(&buff)?;
         }
 
-        if true {
-
-            compare_states(expected, actual).map_err(|err| {
-                let ram = &system.ram;
-                let pc = system.cpu.pc;
-                // let _ = crate::system::dump_mem(ram, Some(pc));
-                // let _ = system.print_stack();
-                err
-            })?;
-
-        }
+        compare_states(expected, actual)?;
         
 
         let cpu_cycles = op.execute(&mut system, &am)?;
         let ppu_cycles = cpu_cycles * 3;
-        // println!("CPU: {cpu_cycles} => PPU: {ppu_cycles}");
 
-        for i in 0..ppu_cycles {
-            ppu::tick(&mut system);
+        for _ in 0..ppu_cycles {
+            ppu::tick(&mut system)?;
         }
 
         eprintln!();
 
-        // let cpu = &mut self.cpu;
-        // cpu.execute(self, op, am);
     }
 
     assert_eq!(system.peek_byte(02), 0);
@@ -197,7 +182,6 @@ impl StateLog {
     
         let chars = &mut row.chars();
     
-        let mut pc_bytes = [0, 0, 0];
         let mut ppu = (0, 0);
         let mut cpu = cpu::CPU::init();
     

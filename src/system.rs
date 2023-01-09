@@ -1,4 +1,4 @@
-use std::{io::{self, Read, Write as IOWrite}, fs};
+use std::{io::{self, Read, Write as IOWrite}, fs, ops::Range};
 
 use self::{cpu::{CPU}, execution_state::ExecutionState, addr::Addr, options::Options};
 
@@ -22,7 +22,7 @@ pub struct System {
     pub(crate) ppu: ppu::PPU,
     pub apu: apu::APU,
     pub(crate) cpu: CPU,
-    pub(crate) cart: Option<Cart>,
+    pub(crate) cart: Cart,
     pub cycles: u64,
     pub(crate) oam: [u8; 256],
     pub opts: Options,
@@ -33,15 +33,15 @@ pub struct System {
 }
 
 impl System {
-    pub fn new(opts: Options) -> Self {
+    pub fn new(opts: Options) -> anyhow::Result<Self> {
         let cpu = CPU::init();
         let history_pos = opts.history_len-1;
-        System {
+        Ok(System {
             ram: vec![0; 2048],
             ppu: ppu::PPU::init(),
             apu: apu::APU::init(),
             cpu,
-            cart: None,
+            cart: Cart::empty()?,
             cycles: 7,
             oam: [0u8; 256],
             opts,
@@ -49,11 +49,7 @@ impl System {
             history: Vec::new(),
             history_pos,
             offset: 1016,
-        }
-    }
-
-    pub fn has_cartridge(&self) -> bool {
-        self.cart.is_some()
+        })
     }
 
     pub fn get_frame(&self) -> [[u32; 256]; 240] {
@@ -64,8 +60,41 @@ impl System {
         dump_mem(&self.ppu.palette, None).expect("failed to dump palette");
     }
 
+    pub fn dump_pattern_tables(&self) {
+        eprintln!("Pattern table #0: (0x0000-0x0fff)");
+        self.dump_ppu_mem(0x0000..0x1000);
+        eprintln!();
+
+        eprintln!("Pattern table #1: (0x1000-0x1fff)");
+        self.dump_ppu_mem(0x1000..0x1fff);
+        eprintln!();
+    }
+
+    fn dump_ppu_mem(&self, range: Range<u16>) {
+        let bytes: Vec<u8> = range.map(|a| self.cart.mapper.ppu_read(Addr(a)).unwrap()).collect();
+        dump_mem(bytes.iter(), None).expect("failed to dump PPU memory");
+    }
+
+    pub fn dump_name_tables(&self) {
+        eprintln!("Name table #0: (0x2000-0x23ff)");
+        dump_mem(self.ppu.vram[0x2000..0x2400].iter(), None).expect("failed to dump name tables");
+        eprintln!();
+
+        eprintln!("Name table #1: (0x2400-0x27ff)");
+        dump_mem(self.ppu.vram[0x2400..0x2800].iter(), None).expect("failed to dump name tables");
+        eprintln!();
+
+        eprintln!("Name table #2: (0x2800-0x2bff)");
+        dump_mem(self.ppu.vram[0x2800..0x2c00].iter(), None).expect("failed to dump name tables");
+        eprintln!();
+
+        eprintln!("Name table #3: (0x2c00-0x2fff)");
+        dump_mem(self.ppu.vram[0x2c00..0x3000].iter(), None).expect("failed to dump name tables");
+        eprintln!();
+    }
+
     pub fn dump_vram(&self) {
-        dump_mem(&self.ppu.vram, None).expect("failed to dump vram");
+        dump_mem(self.ppu.vram.iter(), None).expect("failed to dump name tables");
     }
 
     pub fn dump_zero_page(&self) {
@@ -109,7 +138,7 @@ impl System {
         // }
         // println!();
 
-        self.cart = Some(cart);
+        self.cart = cart;
 
         eprintln!("Cart loaded!");
 
@@ -205,6 +234,16 @@ impl System {
             }
 
             if scan_row_before < 241 && self.ppu.scan_row >= 241 {
+
+                if self.cart.is_empty() {
+                    let version = concat!(" version ", env!("GIT_VERSION"));
+
+                    let base = 0x280 + (15 - (version.len() / 2));
+                    for (i, c) in version.bytes().enumerate() {
+                        self.ppu.vram[base + i] = c;
+                    }
+                }
+
                 // We have a new frame to draw!
                 return Ok(actual);
             }
@@ -215,6 +254,7 @@ impl System {
             // cpu.execute(self, op, am);
         // }
         }
+
     }
 
     pub fn print_stack(&mut self) -> Result<()> {
@@ -268,78 +308,122 @@ impl System {
 
 }
 
+fn write_skipped(stream: &mut tc::StandardStream, skipped: u64) -> anyhow::Result<()> {
+    stream.set_color(ColorSpec::new().set_fg(Some(Color::Black)).set_intense(true))?;
+    match skipped {
+        0 => {},
+        1 => writeln!(stream, " .. skipped one empty line")?,
+        n => writeln!(stream, " .. skipped {n} empty lines")?,
+    }
+    stream.set_color(&ColorSpec::new())?;
+    Ok(())
+}
+
 pub fn dump_mem<'a, T>(source: T, curr_address: Option<addr::Addr>) -> Result<()> 
     where T: IntoIterator<Item = &'a u8>
 {
     let mut stderr = tc::StandardStream::stderr(tc::ColorChoice::AlwaysAnsi);
-    
-    write!(&mut stderr, "    ")?;
-    for x in 0..0x10 {
-        // if curr_address.is_some_and(|ca| ca & 0xf == x) {
-        if curr_address.is_some() && curr_address.unwrap().0 & 0xf == x {
+
+    let mut header_written = false;
+
+    let mut chars = ['.'; 16];
+
+    let mut skipping = false;
+    let mut skipped = 0;
+    let cursor: Vec<u8> = source.into_iter().copied().collect();
+    for (y, row) in cursor.chunks(16).enumerate() {
+        let y_mask = (y << 4) as u16;
+        let empty = row.iter().copied().all(|b| b == 0);
+        if empty {
+            skipping = true;
+        } else if skipping {
+            write_skipped(&mut stderr, skipped)?;
+            
+            skipping = false;
+            skipped = 0;
+            
+        }
+        
+        if !empty && !header_written {
+            header_written = true;
+            write!(&mut stderr, "    ")?;
+            for x in 0..0x10 {
+                // if curr_address.is_some_and(|ca| ca & 0xf == x) {
+                if curr_address.is_some() && curr_address.unwrap().0 & 0xf == x {
+                    stderr.set_color(ColorSpec::new().set_fg(Some(Color::Cyan)).set_intense(true))?;
+                } else {
+                    stderr.set_color(ColorSpec::new().set_fg(Some(Color::Black)).set_intense(true))?;
+                }
+                write!(&mut stderr, " {x:01x} ")?;
+            }
+            writeln!(&mut stderr)?;
+        }
+
+        if skipping {
+            skipped += 1;
+            continue;
+        }
+
+        if curr_address.is_some() && curr_address.unwrap().0 & 0xfff0 == y_mask  {
             stderr.set_color(ColorSpec::new().set_fg(Some(Color::Cyan)).set_intense(true))?;
         } else {
             stderr.set_color(ColorSpec::new().set_fg(Some(Color::Black)).set_intense(true))?;
         }
-        write!(&mut stderr, " {x:01x} ")?;
-    }
-    writeln!(&mut stderr)?;
-
-    let mut chars = ['.'; 16];
-
-    for (pos, value) in source.into_iter().copied().enumerate() {
-        let x = pos & 0xf;
-        let y = (pos & 0xfff0) as u16;
-
-        if x == 0 {
-            if curr_address.is_some() && curr_address.unwrap().0 & 0xfff0 == y  {
-                stderr.set_color(ColorSpec::new().set_fg(Some(Color::Cyan)).set_intense(true))?;
-            } else {
-                stderr.set_color(ColorSpec::new().set_fg(Some(Color::Black)).set_intense(true))?;
-            }
-            write!(&mut stderr, " {:02x} ", y >> 4).unwrap();
-        }
+        write!(&mut stderr, " {:02x} ", y).unwrap();
         
-        if value == 0x00 {
-            stderr.set_color(ColorSpec::new().set_fg(Some(Color::Black)).set_intense(true))?;
-        } else if value == 0xff {
-            stderr.set_color(ColorSpec::new().set_fg(Some(Color::Magenta)).set_intense(true))?;
-        } else {
-            stderr.set_color(&ColorSpec::new())?;
-        }
-        write!(&mut stderr, "{:02x} ", value)?;
 
-        let val_char = value as char;
+        for (x, value) in row.into_iter().copied().enumerate() {
+            //let x = pos & 0xf;
+            //let y = (pos & 0xfff0) as u16;
 
-        chars[x] = val_char;
-
-        if x == 0xf {
-            for char in chars {
-                if char.is_ascii_graphic() {
-                    stderr.set_color(ColorSpec::new().set_fg(Some(Color::Yellow)).set_intense(true))?;
-                    write!(&mut stderr, "{char}")?;
-                } else {
-
-                    match char as u8 {
-                        0 => {
-                            stderr.set_color(ColorSpec::new().set_fg(Some(Color::Black)).set_intense(true))?;
-                        },
-                        255 => {
-                            stderr.set_color(ColorSpec::new().set_fg(Some(Color::Magenta)).set_intense(true))?;
-                        }
-                        _ => {
-                            stderr.set_color(&ColorSpec::new())?;
-                            
-                        }
-                    }
-                    write!(&mut stderr, ".")?;
-                }
-                // ▮
+            
+            if value == 0x00 {
+                stderr.set_color(ColorSpec::new().set_fg(Some(Color::Black)).set_intense(true))?;
+            } else if value == 0xff {
+                stderr.set_color(ColorSpec::new().set_fg(Some(Color::Magenta)).set_intense(true))?;
+            } else {
+                stderr.set_color(&ColorSpec::new())?;
             }
-            writeln!(&mut stderr)?;
-            chars = ['.'; 16];
+            write!(&mut stderr, "{:02x} ", value)?;
+
+            let val_char = value as char;
+
+            chars[x] = val_char;
+        }
+
+        for char in chars {
+            if char.is_ascii_graphic() {
+                stderr.set_color(ColorSpec::new().set_fg(Some(Color::Yellow)).set_intense(true))?;
+                write!(&mut stderr, "{char}")?;
+            } else {
+
+                match char as u8 {
+                    0 => {
+                        stderr.set_color(ColorSpec::new().set_fg(Some(Color::Black)).set_intense(true))?;
+                    },
+                    255 => {
+                        stderr.set_color(ColorSpec::new().set_fg(Some(Color::Magenta)).set_intense(true))?;
+                    }
+                    _ => {
+                        stderr.set_color(&ColorSpec::new())?;
+                        
+                    }
+                }
+                write!(&mut stderr, ".")?;
+            }
+            // ▮
+        }
+        stderr.set_color(&ColorSpec::new())?;
+        writeln!(&mut stderr)?;
+        chars = ['.'; 16];
+
+        if !skipping && empty {
+            skipping = true;
         }
     }
-    stderr.set_color(&ColorSpec::new())?;
+
+    if skipping {
+        write_skipped(&mut stderr, skipped)?;
+    }
     Ok(())
 }

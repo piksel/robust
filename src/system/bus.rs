@@ -11,7 +11,7 @@ $4018-$401F	$0008	APU and I/O functionality that is normally disabled. See CPU T
 $4020-$FFFF	$BFE0	Cartridge space: PRG ROM, PRG RAM, and mapper registers (See Note
 */
 
-use super::{ppu, addr::{self, Addr}, apu};
+use super::{ppu, addr::Addr, apu};
 
 impl super::System {
 
@@ -21,12 +21,7 @@ impl super::System {
             BusTarget::RAM(ra) => Ok(self.ram[ra]),
             BusTarget::PPU(ra) => ppu::read(self, ra as u8),
             BusTarget::APU(ra) => Ok(apu::read(self, ra as u8)),
-            BusTarget::PRG => {
-                match &self.cart {
-                    None => anyhow::bail!("tried to read from cart when not loaded"),
-                    Some(cart) => cart.mapper.cpu_read(addr)
-                }
-            },
+            BusTarget::PRG => self.cart.mapper.cpu_read(addr),
             BusTarget::OAMDMA => anyhow::bail!("tried to read from OAM DMA"),
         }
     }
@@ -37,12 +32,7 @@ impl super::System {
             BusTarget::RAM(ra) => self.ram[ra],
             BusTarget::PPU(ra) => panic!("tried to peek into PPU {addr} ({ra:04x})"),
             BusTarget::APU(ra) => panic!("tried to peek into APU {addr} ({ra:04x})"),
-            BusTarget::PRG => {
-                match &self.cart {
-                    None => panic!("tried to read from cart when not loaded"),
-                    Some(cart) => cart.mapper.cpu_read(addr).unwrap()
-                }
-            },
+            BusTarget::PRG => self.cart.mapper.cpu_read(addr).unwrap(),
             BusTarget::OAMDMA => panic!("tried to read from OAM DMA"),
         }
     }
@@ -53,13 +43,7 @@ impl super::System {
             BusTarget::RAM(ra) => self.ram[ra] = value,
             BusTarget::PPU(ra) => ppu::write(self, ra as u8, value)?,
             BusTarget::APU(ra) => apu::write(self, ra as u8, value),
-            BusTarget::PRG => {
-                match &mut self.cart {
-                    None => panic!("tried to read from cart when not loaded"),
-                    Some(cart) => cart.write_byte(addr, value), 
-                    // Some(_cart) => panic!("writing to cart is not implemented (tried writing {value:02x} to {addr:04x})")
-                }
-            },
+            BusTarget::PRG => self.cart.write_byte(addr, value),
             BusTarget::OAMDMA => {
                 // println!("Writing to OAM using DMA on bank {value:02x}");
                 assert_eq!(self.ppu.oam_addr, 0);

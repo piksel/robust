@@ -33,12 +33,12 @@ pub struct PPU {
     // pub mono_frame_buffer: [[u8; 256]; 240],
     pub frame_buffer: [[u32; 256]; 240],
 
-    pub vram: [u8; 0x4000],
+    pub vram: Vec<u8>,
     pub palette: [u8; 32],
     pub bg_patterns: [u16; 2],
     pub bg_palettes: [u8; 2],
 
-    pub sprite_outputs: Vec<[u8; 5]>,
+    pub sprite_outputs: Vec<[u8; 7]>,
 }
 
 impl PPU {
@@ -67,7 +67,7 @@ impl PPU {
             scan_line: 21,
             scan_row: 0,
             frame_buffer: [[0u32; 256]; 240],
-            vram: [0; 0x4000],
+            vram: vec![0; 0x4000],
             palette: [0; 32],
             bg_patterns: [0; 2],
             bg_palettes: [0; 2],
@@ -176,7 +176,7 @@ pub(crate) fn write(sys: &mut System, address: u8, value: u8) -> anyhow::Result<
         7 => {
             if sys.ppu.addr < 0x2000 {
                 // Writing to CHR-RAM. Let's just hope it's RAM...
-                sys.cart.as_mut().unwrap().mapper.ppu_write(sys.ppu.addr.into(), value)?;
+                sys.cart.mapper.ppu_write(sys.ppu.addr.into(), value)?;
                 // sys.ppu.vram[sys.ppu.addr as usize] = value;
             } else if sys.ppu.addr < 0x3000 {
                 if sys.ppu.addr == 0x27a0 {
@@ -212,7 +212,7 @@ fn bump_addr(sys: &mut System) {
 }
 
 fn mirrored_addr(sys: &System, base: u16) -> u16 {
-    let vertical_mirroring = sys.cart.as_ref().unwrap().header.vertical_mirroring;
+    let vertical_mirroring = sys.cart.header.vertical_mirroring;
     if vertical_mirroring {
         // eprintln!("Writing to {:04x} wrapped from {:04x}", base % 0x800, base);
         base % 0x800
@@ -257,7 +257,7 @@ pub(crate) fn read(sys: &mut System, address: u8) -> anyhow::Result<u8> {
             sys.ppu.data = if sys.ppu.addr < 0x2000 {
                 // Reading from to CHR-RAM
                 //sys.ppu.vram[sys.ppu.addr as usize]
-                sys.cart.as_mut().unwrap().mapper.ppu_read(sys.ppu.addr.into())?
+                sys.cart.mapper.ppu_read(sys.ppu.addr.into())?
             } else if sys.ppu.addr < 0x3000 {
                 let addr = mirrored_addr(sys, sys.ppu.addr - 0x2000);
 

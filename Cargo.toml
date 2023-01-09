@@ -8,11 +8,16 @@ default-run = "robust"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-anyhow = "1.0"
-color-backtrace = "0.5.1"
-termcolor = "1.0"
-minifb = "0.23"
-clap = { version = "4.0.29", features = ["derive"] }
-imageproc = "0.23.0"
-image = { version = "0.24.5", features = ["rgb"] }
-rusttype = "0.9.3"
+anyhow     = { version = "1.0" }
+termcolor  = { version = "1.0" }
+minifb     = { git = "https://github.com/emoon/rust_minifb", rev = "c042d26ffd2164a16bd63b64098f93d31d524bc1" }
+# minifb     = { version = "0.23" }
+clap       = { version = "4.0.29", features = ["derive"] }
+imageproc  = { version = "0.23.0" }
+image      = { version = "0.24.5", features = ["rgb"] }
+rusttype   = { version = "0.9.3" }
+color-backtrace = { version = "0.5.1" }
+
+[build-dependencies]
+genco      = { version = "0.17.2" }
+anyhow     = { version = "1.0" }

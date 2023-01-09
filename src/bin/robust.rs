@@ -1,7 +1,7 @@
 use clap::{Parser, builder::{PathBufValueParser, TypedValueParser, PossibleValuesParser}};
-use robust::{system::{self, apu::ControllerButton, options::Options, execution_state::ExecutionState}, font::Font, clapx::{ensure_existing_file, scale_value_parser, SCALE_VALUES}, screen::Screen};
+use robust::{system::{self, apu::ControllerButton, options::Options, addr::Addr}, font::Font, clapx::{ensure_existing_file, scale_value_parser, SCALE_VALUES}, screen::Screen};
 
-use std::{env, fs, path::{PathBuf}, ops::Not};
+use std::{env, fs, path::{PathBuf}};
 use anyhow::Result;
 use minifb::{WindowOptions, Window, Key, KeyRepeat, Scale, ScaleMode, Menu};
 
@@ -38,7 +38,7 @@ fn main() -> Result<()> {
         dump_ops: args.trace,
         history_len: args.history,
         ..Default::default()
-    });
+    })?;
 
 
 
@@ -62,6 +62,7 @@ fn main() -> Result<()> {
     window.set_background_color(0x17, 0x05, 0x30);
 
     let mut debug_opts = DebugOps::new();
+    let mut paused = false;
 
     debug_opts.update_menu(&mut window);
 
@@ -82,10 +83,14 @@ fn main() -> Result<()> {
         let cart_file = fs::File::open(cart_file)?;
         system.load_cart(&cart_file)?;
         screen.draw_text(&font, 10, 10, "Loading...", 1)?;
-    
-        system.reset();
+    } else {
+        let base = Addr::from_zero(0x80);
+        for (i, c) in env!("GIT_VERSION").bytes().enumerate() {
+            system.write_byte(base + i as u16, c)?;
+        }
     }
 
+    system.reset()?;
 
     eprintln!();
     eprintln!("Starting execution...");
@@ -110,24 +115,26 @@ fn main() -> Result<()> {
             }
         }
 
-        if window.is_key_down(Key::T) {
-            debug_opts.toggle(DebugOps::SHOW_TEST_REGS);
-        }
-
-        if window.is_key_down(Key::F1) {
+        if window.is_key_pressed(Key::F1, KeyRepeat::No) {
             system.offset -= 1;
             eprintln!("Offset decreased to {}", system.offset);
         }
 
-        if window.is_key_down(Key::F2) {
+        if window.is_key_pressed(Key::F2, KeyRepeat::No) {
             system.offset += 1;
             eprintln!("Offset increased to {}", system.offset);
         }
 
+        if window.is_key_pressed(Key::F3, KeyRepeat::No) {
+            paused.toggle();
+        }
+
 
         debug_opts.update_menu(&mut window);
+        system.opts.sprite_order_overlay = debug_opts.sprite_order_overlay();
+        system.opts.dump_ops = debug_opts.dump_ops();
 
-        let last_state = if system.has_cartridge() {
+        let last_state = if !paused {
             for key in window.get_keys_pressed(KeyRepeat::No) {
                 if let Some((cid, btn)) = map_key_to_button(key) {
                     system.apu.set_controller_button(cid, btn, true);
@@ -211,14 +218,24 @@ fn main() -> Result<()> {
         window
             .update_with_buffer(&screen.buffer, WIDTH, HEIGHT)
             .unwrap();
-
   
     }
     
-    // eprintln!("\nVRAM:"); system::dump_mem(system.ppu.vram, None)?;
-    eprintln!("\nPalette:"); system.dump_palette();   
-    eprintln!("\nOAM:"); system.dump_oam();   
-    // eprintln!("\nZero Page:"); system.dump_zero_page();
+    if debug_opts.dump_ntables(){
+        // eprintln!(); system.dump_pattern_tables();
+        eprintln!(); system.dump_name_tables();
+        eprintln!("\nPalette:"); system.dump_palette();   
+        eprintln!("\nOAM:"); system.dump_oam();   
+    }
+
+    if debug_opts.dump_vram() {
+        eprintln!("\nVRAM:"); system.dump_vram();
+    }
+
+    if debug_opts.dump_stack() {
+        eprintln!("\nZero Page:"); system.dump_zero_page();
+        eprintln!("\nStack:"); system.dump_stack();
+    }
 
     eprintln!("\nDone!");
 
@@ -239,9 +256,16 @@ fn map_key_to_button(key: Key) -> Option<(usize, ControllerButton)> {
     }
 }
 
+enum MenuLabel {
+    ShowHide(&'static str),
+    EnableDisable(&'static str),
+    #[allow(dead_code)]
+    Static(&'static str),
+}
+
 struct DebugOps {
     handles: Option<[minifb::MenuItemHandle; Self::ITEM_COUNT]>,
-    labels: [&'static str; Self::ITEM_COUNT],
+    labels: [MenuLabel; Self::ITEM_COUNT],
     values: [bool; Self::ITEM_COUNT],
     has_changes: bool,
     menu_handle: Option<minifb::MenuHandle>
@@ -252,14 +276,12 @@ impl DebugOps {
     const SHOW_LAST_STATE: usize = 1;
     const SHOW_INPUT_BUTTONS: usize = 2;
     const SHOW_FPS: usize = 3;
-    const ITEM_COUNT: usize = 4;
-
-    const items: [usize; Self::ITEM_COUNT] = [
-        Self::SHOW_TEST_REGS,
-        Self::SHOW_LAST_STATE,
-        Self::SHOW_INPUT_BUTTONS,
-        Self::SHOW_FPS,
-    ];
+    const SPRITE_ORDER_OVERLAY: usize = 4;
+    const DUMP_CPU_OPS: usize = 5;
+    const DUMP_VRAM: usize = 6;
+    const DUMP_NTABLES: usize = 7;
+    const DUMP_STACK: usize = 8;
+    const ITEM_COUNT: usize = 9;
 
     pub fn new() -> Self {
         Self {
@@ -268,15 +290,25 @@ impl DebugOps {
                 true  /* show_last_state */,
                 true  /* show_input_buttons */,
                 true  /* show_fps */,
+                true, // sprite order overlay
+                false, // dump ops
+                true, // dump vram
+                true, // dump ntables
+                true, // dump stack
             ],
             has_changes: true,
             handles: None,
             menu_handle: None,
             labels: [
-                "test regs",
-                "last state",
-                "input buttons",
-                "fps"
+                MenuLabel::ShowHide("test regs"),
+                MenuLabel::ShowHide("last state"),
+                MenuLabel::ShowHide("input buttons"),
+                MenuLabel::ShowHide("fps"),
+                MenuLabel::EnableDisable("sprite order overlay"),
+                MenuLabel::EnableDisable("dump CPU ops"),
+                MenuLabel::EnableDisable("dump VRAM on exit"),
+                MenuLabel::EnableDisable("dump name tables on exit"),
+                MenuLabel::EnableDisable("dump stack on exit"),
             ]
         }
     }
@@ -300,13 +332,24 @@ impl DebugOps {
     }
 
     pub fn get_item_label(&self, item_id: usize) -> String {
-        (if self.values[item_id] {"Hide "} else {"Show "}).to_owned() + self.labels[item_id]
+        match (&self.labels[item_id], self.values[item_id]) {
+            (MenuLabel::ShowHide(s), true ) => "Hide ".to_owned() + s,
+            (MenuLabel::ShowHide(s), false) => "Show ".to_owned() +  s,
+            (MenuLabel::EnableDisable(s), true ) => "Disable ".to_owned() +  s,
+            (MenuLabel::EnableDisable(s), false) => "Enable ".to_owned() +  s,
+            (MenuLabel::Static(s), _) => s.to_string(),
+        }
     }
 
     pub fn show_test_regs(&self) -> bool { self.values[Self::SHOW_TEST_REGS] }
     pub fn show_last_state(&self) -> bool { self.values[Self::SHOW_LAST_STATE] }
     pub fn show_input_buttons(&self) -> bool { self.values[Self::SHOW_INPUT_BUTTONS] }
     pub fn show_fps(&self) -> bool { self.values[Self::SHOW_FPS] }
+    pub fn sprite_order_overlay(&self) -> bool { self.values[Self::SPRITE_ORDER_OVERLAY] }
+    pub fn dump_ops(&self) -> bool { self.values[Self::DUMP_CPU_OPS] }
+    pub fn dump_vram(&self) -> bool { self.values[Self::DUMP_VRAM] }
+    pub fn dump_ntables(&self) -> bool { self.values[Self::DUMP_NTABLES] }
+    pub fn dump_stack(&self) -> bool { self.values[Self::DUMP_STACK] }
 
     pub(crate) fn match_id(&self, mid: usize) -> Option<usize> {
         if mid >= Self::MENU_ID_OFFSET && mid < Self::MENU_ID_OFFSET + Self::ITEM_COUNT {

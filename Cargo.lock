@@ -433,6 +433,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "genco"
+version = "0.17.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "43de41c8ce1ed5ac84a1b11fb3e4ef604bf6773068798490eaa95e8151abad20"
+dependencies = [
+ "genco-macros",
+ "relative-path",
+ "smallvec",
+]
+
+[[package]]
+name = "genco-macros"
+version = "0.17.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c85fd34848b1f708e6344a4af6f7bfc05172ae20ce4b35c8e417efffb4f306aa"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "getrandom"
 version = "0.1.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -693,8 +715,7 @@ dependencies = [
 [[package]]
 name = "minifb"
 version = "0.23.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d9e21c5f89bb820c7878c300c5b944e65de0f1b2a75e0be92ce670b95943740e"
+source = "git+https://github.com/emoon/rust_minifb?rev=c042d26ffd2164a16bd63b64098f93d31d524bc1#c042d26ffd2164a16bd63b64098f93d31d524bc1"
 dependencies = [
  "cc",
  "dlib",
@@ -1129,6 +1150,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "relative-path"
+version = "1.7.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d3bf6b372449361333ac1f498b7edae4dd5e70dccd7c0c2a7c7bce8f05ede648"
+
+[[package]]
 name = "remove_dir_all"
 version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1153,6 +1180,7 @@ dependencies = [
  "anyhow",
  "clap",
  "color-backtrace",
+ "genco",
  "image",
  "imageproc",
  "minifb",

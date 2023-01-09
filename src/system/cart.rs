@@ -3,7 +3,7 @@
 use core::panic;
 
 use anyhow::{Result, format_err, bail};
-use std::{io::Write, fmt::Display};
+use std::{io::{Write, Cursor, Read}, fmt::Display};
 use crate::mappers::{self, Mapper};
 use termcolor::{WriteColor, ColorSpec, Color, StandardStream};
 use super::addr::Addr;
@@ -18,10 +18,18 @@ type ByteResult = IOResult<u8>;
 pub(crate) struct Cart {
     pub(crate) header: Header,
     pub mapper: Box<dyn Mapper>,
+    is_empty: bool,
 }
 
 impl Cart {
 
+    const EMPTY_CART: &[u8] = include_bytes!("../../empty/empty.nes");
+
+    pub(crate) fn empty() -> Result<Self> {
+        let mut cart = Self::new(Cursor::new(Self::EMPTY_CART).bytes())?;
+        cart.is_empty = true;
+        Ok(cart)
+    }
 
     pub(crate) fn new<B: IntoIterator<Item=ByteResult>>(bytes: B) -> Result<Self> {
         let mut head = bytes.into_iter();
@@ -42,6 +50,7 @@ impl Cart {
         Ok(Cart{
             header,
             mapper,
+            is_empty: false,
         })
     }
 
@@ -55,6 +64,10 @@ impl Cart {
         let upper_sliver = self.mapper.ppu_read(upper_addr)?;// .chr_rom[upper_addr as usize];
         let lower_sliver = self.mapper.ppu_read(lower_addr)?;// as usize];
         Ok((upper_sliver, lower_sliver))
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.is_empty
     }
 }
 

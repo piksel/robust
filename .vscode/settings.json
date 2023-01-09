@@ -1,10 +1,12 @@
 {
     "cSpell.words": [
         "clapx",
+        "consts",
         "curr",
         "minifb",
         "nestest",
         "NROM",
+        "ntables",
         "OAMDMA",
         "playchoice",
         "regs",
