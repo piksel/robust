@@ -156,27 +156,15 @@ impl System {
 
     pub fn run_cycle(&mut self) -> Result<ExecutionState> {
 
-        // let mut stderr = tc::BufferWriter::stderr(tc::ColorChoice::AlwaysAnsi);
-        // let mut bad_colors = tc::ColorSpec::new();
-        // bad_colors.set_fg(Some(tc::Color::Red));
-
-        // let mut good_colors = tc::ColorSpec::new();
-        // good_colors.set_fg(Some(tc::Color::Green));
-
-        // let mut dark_colors = tc::ColorSpec::new();
-        // dark_colors.set_fg(Some(tc::Color::Black)).set_intense(true);
-
-        // let norm_colors = tc::ColorSpec::new();
-
-        // init program counter (for use with test cart)
-
-
-        // loop {
+        let version = if env!("GIT_VERSION").starts_with("v") {
+            env!("GIT_VERSION")
+        } else {
+            concat!(" version ", env!("GIT_VERSION"))
+        };
 
         loop {
 
             if self.nmi {
-                    // panic!("First NMI at {}", self.cycles);
                 CPU::stack_push_word(self, self.cpu.pc.into())?;
                 CPU::stack_push_byte(self, self.cpu.status())?;
 
@@ -236,7 +224,6 @@ impl System {
             if scan_row_before < 241 && self.ppu.scan_row >= 241 {
 
                 if self.cart.is_empty() {
-                    let version = concat!(" version ", env!("GIT_VERSION"));
 
                     let base = 0x280 + (15 - (version.len() / 2));
                     for (i, c) in version.bytes().enumerate() {
